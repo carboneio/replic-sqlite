@@ -8,7 +8,7 @@ describe('keepLast extension', () => {
   before(() => {
     db = new Database(':memory:');
     db.loadExtension(path.resolve(__dirname, '../build/Release/keep_last'));
-    
+
     // Create and populate test table
     db.exec(`
       CREATE TABLE test_data (
@@ -33,7 +33,7 @@ describe('keepLast extension', () => {
   });
 
   it.skip('should keep last non-null value in window', () => {
-    // 
+    //
     const rows = db.prepare(`
       SELECT 
         id,
@@ -44,14 +44,14 @@ describe('keepLast extension', () => {
     `).all();
 
     assert.deepStrictEqual(rows, [
-      { id: 1, value: 'A', kept_value: 'A' },
-      { id: 2, value: null, kept_value: 'A' },
-      { id: 3, value: null, kept_value: 'A' },
-      { id: 4, value: 'B', kept_value: 'B' },
-      { id: 5, value: null, kept_value: 'B' },
-      { id: 6, value: 'C', kept_value: 'C' },
-      { id: 7, value: null, kept_value: 'C' },
-      { id: 8, value: null, kept_value: 'C' }
+      { id : 1, value : 'A', kept_value : 'A' },
+      { id : 2, value : null, kept_value : 'A' },
+      { id : 3, value : null, kept_value : 'A' },
+      { id : 4, value : 'B', kept_value : 'B' },
+      { id : 5, value : null, kept_value : 'B' },
+      { id : 6, value : 'C', kept_value : 'C' },
+      { id : 7, value : null, kept_value : 'C' },
+      { id : 8, value : null, kept_value : 'C' }
     ]);
   });
 
@@ -85,8 +85,8 @@ describe('keepLast extension', () => {
     `).all();
 
     assert.deepStrictEqual(rows, [
-      { id: 7, category: 'A', value: null, kept_value: 'A2' },
-      { id: 8, category: 'B', value: 'B2', kept_value: 'B2' }
+      { id : 7, category : 'A', value : null, kept_value : 'A2' },
+      { id : 8, category : 'B', value : 'B2', kept_value : 'B2' }
     ]);
   });
 
@@ -107,9 +107,9 @@ describe('keepLast extension', () => {
     `).all();
 
     assert.deepStrictEqual(rows, [
-      { id: 1, value: null, kept_value: null },
-      { id: 2, value: null, kept_value: null },
-      { id: 3, value: null, kept_value: null }
+      { id : 1, value : null, kept_value : null },
+      { id : 2, value : null, kept_value : null },
+      { id : 3, value : null, kept_value : null }
     ]);
   });
 
@@ -133,12 +133,12 @@ describe('keepLast extension', () => {
     `).all();
 
     assert.deepStrictEqual(rows, [
-      { id: 1, value: 42, kept_value: 42 },
-      { id: 2, value: null, kept_value: 42 },
-      { id: 3, value: 3.14, kept_value: 3.14 },
-      { id: 4, value: null, kept_value: 3.14 },
-      { id: 5, value: 'text', kept_value: 'text' },
-      { id: 6, value: null, kept_value: 'text' }
+      { id : 1, value : 42, kept_value : 42 },
+      { id : 2, value : null, kept_value : 42 },
+      { id : 3, value : 3.14, kept_value : 3.14 },
+      { id : 4, value : null, kept_value : 3.14 },
+      { id : 5, value : 'text', kept_value : 'text' },
+      { id : 6, value : null, kept_value : 'text' }
     ]);
   });
-}); 
+});

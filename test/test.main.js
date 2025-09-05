@@ -35,12 +35,12 @@ describe('main', function () {
     let _prepareStatementHookCalls = [];
     function prepareStatementHook (tableName, column) {
       _prepareStatementHookCalls.push({ tableName, column });
-      return '?'
+      return '?';
     }
     beforeEach (function () {
       db = connect(); // memory db
       app = SQLiteOnSteroid(db, 1, { prepareStatementHook });
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
     });
     afterEach (function () {
       close(db);
@@ -104,9 +104,9 @@ describe('main', function () {
     let db, app;
     let fakePeerSockets;
     let broadcastedMessages;
-    function createFakePeerSocket() {
+    function createFakePeerSocket () {
       return {
-        send: function(message) {
+        send : function (message) {
           broadcastedMessages.push(message);
         }
       };
@@ -115,15 +115,15 @@ describe('main', function () {
       db = connect(); // memory db
       broadcastedMessages = [];
       fakePeerSockets = {
-        100: createFakePeerSocket(),
-        101: createFakePeerSocket(),
-        102: createFakePeerSocket()
+        100 : createFakePeerSocket(),
+        101 : createFakePeerSocket(),
+        102 : createFakePeerSocket()
       };
       app = SQLiteOnSteroid(db, 1800);
       app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
       app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
       app.addRemotePeer(102, fakePeerSockets[102], { ip : '127.0.0.1', port : 10002 });
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
     });
 
     afterEach (function () {
@@ -181,13 +181,17 @@ describe('main', function () {
       const _rowPatch6 = { id : 2, tenantId : 30,               deletedAt : 7                };
       const _rowPatch7 = { id : 2, tenantId : 30,                              createdAt : 8 };
       const _rowPatches = [_rowPatch1, _rowPatch2, _rowPatch3, _rowPatch4, _rowPatch5, _rowPatch6, _rowPatch7];
-      
+
       // Apply all patches sequentially
       for (const rowPatch of _rowPatches) {
         await new Promise((resolve, reject) => {
           app.upsert('testA', rowPatch, (err) => {
-            if (err) reject(err);
-            else resolve();
+            if (err) {
+              reject(err);
+            }
+            else {
+              resolve();
+            }
           });
         });
       }
@@ -224,21 +228,21 @@ describe('main', function () {
     let fakePeerSockets;
     let broadcastedMessages;
     const existingPatchTimestamp = Date.now() - 1000; // 1 second ago
-    
-    function createFakePeerSocket() {
+
+    function createFakePeerSocket () {
       return {
-        send: function(message) {
+        send : function (message) {
           broadcastedMessages.push(message);
         }
       };
     }
-    
+
     beforeEach (function () {
       db = connect(); // memory db
       broadcastedMessages = [];
       fakePeerSockets = {
-        100: createFakePeerSocket(),
-        101: createFakePeerSocket()
+        100 : createFakePeerSocket(),
+        101 : createFakePeerSocket()
       };
       // Create schema first
       db.exec(_testSchema);
@@ -258,10 +262,10 @@ describe('main', function () {
       app = SQLiteOnSteroid(db, 1800);
       app.addRemotePeer(100, fakePeerSockets[100]);
       app.addRemotePeer(101, fakePeerSockets[101]);
-      app.migrate([{ up: '', down: ''}]); // Empty migration since schema already exists
-  
+      app.migrate([{ up : '', down : ''}]); // Empty migration since schema already exists
+
       // Insert a new patch
-      const newRowPatch = { id: 12, tenantId: 22, name: 'new_patch', deletedAt: 102, createdAt: 202 };
+      const newRowPatch = { id : 12, tenantId : 22, name : 'new_patch', deletedAt : 102, createdAt : 202 };
       app.upsert('testA', newRowPatch, (err) => {
         if (err) {
           throw err;
@@ -283,7 +287,7 @@ describe('main', function () {
         });
 
         // Insert another patch to verify sequence continues
-        const anotherRowPatch = { id: 13, tenantId: 23, name: 'another_patch', deletedAt: 103, createdAt: 203 };
+        const anotherRowPatch = { id : 13, tenantId : 23, name : 'another_patch', deletedAt : 103, createdAt : 203 };
         app.upsert('testA', anotherRowPatch, (err2) => {
           if (err2) {
             throw err2;
@@ -303,7 +307,7 @@ describe('main', function () {
         });
       });
     });
-    
+
     it('should continue sequence from last sequenceId across all patch tables', function (done) {
       // Insert pre-existing patches in testA_patches
       db.exec(`
@@ -322,9 +326,9 @@ describe('main', function () {
           (${existingPatchTimestamp + 200}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
           (${existingPatchTimestamp + 300}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
       `;
-      app.migrate([{ up: _preExistingPatch1, down: ''}]); // Empty table migration since schema already exists
+      app.migrate([{ up : _preExistingPatch1, down : ''}]); // Empty table migration since schema already exists
       // Insert a new patch - should continue from sequenceId 4
-      const newRowPatch = { id: 12, tenantId: 22, name: 'new_patch', deletedAt: 102, createdAt: 202 };
+      const newRowPatch = { id : 12, tenantId : 22, name : 'new_patch', deletedAt : 102, createdAt : 202 };
       app.upsert('testA', newRowPatch, (err) => {
         if (err) {
           throw err;
@@ -373,7 +377,7 @@ describe('main', function () {
           (${existingPatchTimestamp - 50}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
           (${existingPatchTimestamp - 300}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
       `;
-      app.migrate([{ up: _preExistingPatch1, down: ''}]);
+      app.migrate([{ up : _preExistingPatch1, down : ''}]);
       // Delete old patches
       app._deleteOldPatches();
       // Verify all patches including the new one
@@ -394,7 +398,7 @@ describe('main', function () {
     beforeEach (function () {
       db = connect(); // memory db
       app = SQLiteOnSteroid(db, 1, { patchApplyDelayMs : (patchApplyDelayMs - 10)  });
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
     });
     afterEach (function () {
       close(db);
@@ -402,23 +406,23 @@ describe('main', function () {
 
     it('should not crash if the table is unknown when receiving a patch', function (done) {
       const baseTimestamp = Date.now();
-      const _rowPatch1 = { at: baseTimestamp + 1, peer: 20, seq: 1, ver: 1, tab: 'UnknwonwtestA', delta: { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
+      const _rowPatch1 = { at : baseTimestamp + 1, peer : 20, seq : 1, ver : 1, tab : 'UnknwonwtestA', delta : { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
       app._onPatchReceivedFromPeers(_rowPatch1);
       done();
     });
 
     it('should merge patches coming from peers. Should ignore patch coming from myself. ', function (done) {
       const baseTimestamp = Date.now();
-      const _rowPatch1 = { at: baseTimestamp + 1, peer: 20, seq: 1, ver: 1, tab: 'testA', delta: { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
-      const _rowPatch2 = { at: baseTimestamp + 2, peer: 20, seq: 2, ver: 1, tab: 'testA', delta: { id : 1, tenantId : 2 , name : '2b' , deletedAt : 3, createdAt : 300 } };
-      const _rowPatch3 = { at: baseTimestamp + 3, peer: 20, seq: 3, ver: 1, tab: 'testA', delta: { id : 1, tenantId : 2 , name : '2c'                                } };
-      const _rowPatch4 = { at: baseTimestamp + 4, peer: 20, seq: 4, ver: 1, tab: 'testA', delta: { id : 2, tenantId : 30, name : '30a', deletedAt : 4, createdAt : 5 } };
-      const _rowPatch5 = { at: baseTimestamp + 5, peer: 20, seq: 5, ver: 1, tab: 'testA', delta: { id : 2, tenantId : 30, name : '30b', deletedAt : 5, createdAt : 6 } };
-      const _rowPatch6 = { at: baseTimestamp + 6, peer: 20, seq: 6, ver: 1, tab: 'testA', delta: { id : 2, tenantId : 30,               deletedAt : 7                } };
-      const _rowPatch7 = { at: baseTimestamp + 7, peer: 20, seq: 7, ver: 1, tab: 'testA', delta: { id : 2, tenantId : 30,                              createdAt : 8 } };
-      const _rowPatch8 = { at: baseTimestamp + 8, peer: 1 , seq: 7, ver: 1, tab: 'testA', delta: { id : 2, tenantId : 30,                              createdAt : 9 } };
+      const _rowPatch1 = { at : baseTimestamp + 1, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
+      const _rowPatch2 = { at : baseTimestamp + 2, peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2b' , deletedAt : 3, createdAt : 300 } };
+      const _rowPatch3 = { at : baseTimestamp + 3, peer : 20, seq : 3, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2c'                                } };
+      const _rowPatch4 = { at : baseTimestamp + 4, peer : 20, seq : 4, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30a', deletedAt : 4, createdAt : 5 } };
+      const _rowPatch5 = { at : baseTimestamp + 5, peer : 20, seq : 5, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30b', deletedAt : 5, createdAt : 6 } };
+      const _rowPatch6 = { at : baseTimestamp + 6, peer : 20, seq : 6, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,               deletedAt : 7                } };
+      const _rowPatch7 = { at : baseTimestamp + 7, peer : 20, seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 8 } };
+      const _rowPatch8 = { at : baseTimestamp + 8, peer : 1 , seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 9 } };
       const _patches = [_rowPatch1, _rowPatch2, _rowPatch3, _rowPatch4, _rowPatch5, _rowPatch6, _rowPatch7, _rowPatch8];
-      
+
       // Apply all patches sequentially
       for (const _patch of _patches) {
         app._onPatchReceivedFromPeers(_patch);
@@ -448,13 +452,13 @@ describe('main', function () {
 
     it('should merge patches coming, sort patch by date, then by peer id, then by sequence id', function (done) {
       const baseTimestamp = Date.now();
-      const _rowPatch1 = { at: baseTimestamp + 1, peer: 20, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2a' } };
-      const _rowPatch2 = { at: baseTimestamp + 1, peer: 21, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2b' } };
-      const _rowPatch3 = { at: baseTimestamp + 1, peer: 21, seq: 2, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2c' } };
-      const _rowPatch4 = { at: baseTimestamp + 2, peer: 19, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2d' } };
-      const _rowPatch5 = { at: baseTimestamp + 2, peer: 20, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2e' } };
-      const _rowPatch6 = { at: baseTimestamp + 3, peer: 18, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2f' } };
-      const _rowPatch7 = { at: baseTimestamp + 3, peer: 18, seq: 2, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2g' } };
+      const _rowPatch1 = { at : baseTimestamp + 1, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : baseTimestamp + 1, peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
+      const _rowPatch3 = { at : baseTimestamp + 1, peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
+      const _rowPatch4 = { at : baseTimestamp + 2, peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
+      const _rowPatch5 = { at : baseTimestamp + 2, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
+      const _rowPatch6 = { at : baseTimestamp + 3, peer : 18, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
+      const _rowPatch7 = { at : baseTimestamp + 3, peer : 18, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2g' } };
       const _patches = [_rowPatch7, _rowPatch3, _rowPatch1, _rowPatch6, _rowPatch2, _rowPatch5, _rowPatch4];
       // Apply all patches sequentially
       for (const _patch of _patches) {
@@ -478,14 +482,14 @@ describe('main', function () {
 
     it('should merge patches with Date.now() timestamp, sorting by peer id and sequence id', function (done) {
       const _constantTimestamp = Date.now(); // A fixed timestamp for all patches
-      const _rowPatch1 = { at: _constantTimestamp, peer: 20, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2a' } };
-      const _rowPatch2 = { at: _constantTimestamp, peer: 20, seq: 2, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2b' } };
-      const _rowPatch3 = { at: _constantTimestamp, peer: 19, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2c' } };
-      const _rowPatch4 = { at: _constantTimestamp, peer: 19, seq: 2, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2d' } };
-      const _rowPatch5 = { at: _constantTimestamp, peer: 21, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2e' } };
-      const _rowPatch6 = { at: _constantTimestamp, peer: 21, seq: 2, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2f' } };
+      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : _constantTimestamp, peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
+      const _rowPatch3 = { at : _constantTimestamp, peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
+      const _rowPatch4 = { at : _constantTimestamp, peer : 19, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
+      const _rowPatch5 = { at : _constantTimestamp, peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
+      const _rowPatch6 = { at : _constantTimestamp, peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
       const _patches = [_rowPatch3, _rowPatch6, _rowPatch1, _rowPatch5, _rowPatch2, _rowPatch4];
-      
+
       // Apply all patches sequentially
       for (const _patch of _patches) {
         app._onPatchReceivedFromPeers(_patch);
@@ -508,10 +512,10 @@ describe('main', function () {
 
     it('should store stats in pending_patches table', function (done) {
       const _constantTimestamp = Date.now(); // A fixed timestamp for all patches
-      const _rowPatch1 = { at: _constantTimestamp, peer: 20, seq: 1 , ver: 1, tab: '_', delta: { 20 : [0,0] } };
-      const _rowPatch2 = { at: _constantTimestamp, peer: 10, seq: 20, ver: 2, tab: '_', delta: { 20 : [1,1] } };
+      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1 , ver : 1, tab : '_', delta : { 20 : [0,0] } };
+      const _rowPatch2 = { at : _constantTimestamp, peer : 10, seq : 20, ver : 2, tab : '_', delta : { 20 : [1,1] } };
       const _patches = [_rowPatch1, _rowPatch2];
-      
+
       // Apply all patches sequentially
       for (const _patch of _patches) {
         app._onPatchReceivedFromPeers(_patch);
@@ -540,9 +544,9 @@ describe('main', function () {
 
     it('should save patches with mismatching version to pending_patches table and apply them later', function (done) {
       const _constantTimestamp = Date.now();
-      const _rowPatch1 = { at: _constantTimestamp, peer: 20, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 2, name: '2a' } };
-      const _rowPatch2 = { at: _constantTimestamp, peer: 21, seq: 2, ver: 2, tab: 'testA', delta: { id: 2, tenantId: 3, name: '3a' } };
-      const _rowPatch3 = { at: _constantTimestamp, peer: 22, seq: 3, ver: 3, tab: 'testA', delta: { id: 3, tenantId: 4, name: '4a' } };
+      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : _constantTimestamp, peer : 21, seq : 2, ver : 2, tab : 'testA', delta : { id : 2, tenantId : 3, name : '3a' } };
+      const _rowPatch3 = { at : _constantTimestamp, peer : 22, seq : 3, ver : 3, tab : 'testA', delta : { id : 3, tenantId : 4, name : '4a' } };
 
       // Apply all patches
       app._onPatchReceivedFromPeers(_rowPatch1);
@@ -563,13 +567,13 @@ describe('main', function () {
         assert.strictEqual(_pendingPatch1.patchVersion, 2);
         assert.strictEqual(_pendingPatch1._sequenceId, 2);
         assert.strictEqual(_pendingPatch1.tableName, 'testA');
-        assert.deepStrictEqual(JSON.parse(_pendingPatch1.delta), { id: 2, tenantId: 3, name: '3a' });
+        assert.deepStrictEqual(JSON.parse(_pendingPatch1.delta), { id : 2, tenantId : 3, name : '3a' });
 
         const _pendingPatch2 = _pendingPatchRows.find(row => row._peerId === 22);
         assert.strictEqual(_pendingPatch2.patchVersion, 3);
         assert.strictEqual(_pendingPatch2._sequenceId, 3);
         assert.strictEqual(_pendingPatch2.tableName, 'testA');
-        assert.deepStrictEqual(JSON.parse(_pendingPatch2.delta), { id: 3, tenantId: 4, name: '4a' });
+        assert.deepStrictEqual(JSON.parse(_pendingPatch2.delta), { id : 3, tenantId : 4, name : '4a' });
 
         done();
       }, patchApplyDelayMs);
@@ -583,12 +587,12 @@ describe('main', function () {
       // Create patches
       for (let i = 0; i < _numPatches; i++) {
         _patches.push({
-          at: Date.now(),
-          peer: Math.floor(Math.random() * 5)+2,
-          seq: i + 1,
-          ver: 1,
-          tab: 'testA',
-          delta: { id: i + 1, tenantId: Math.floor(Math.random() * 10), name: `name${i}` }
+          at    : Date.now(),
+          peer  : Math.floor(Math.random() * 5)+2,
+          seq   : i + 1,
+          ver   : 1,
+          tab   : 'testA',
+          delta : { id : i + 1, tenantId : Math.floor(Math.random() * 10), name : `name${i}` }
         });
       }
 
@@ -620,10 +624,10 @@ describe('main', function () {
       messageSentToPeer10 = [];
       db = connect(); // memory db
       app = SQLiteOnSteroid(db, 1, { patchApplyDelayMs : (patchApplyDelayMs - 10)  });
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
       fakePeerSockets = {
-        10 : { send: (message) => messageSentToPeer10.push(message) },
-        2  : { send: (message) => messageSentToPeer2.push(message) }  
+        10 : { send : (message) => messageSentToPeer10.push(message) },
+        2  : { send : (message) => messageSentToPeer2.push(message) }
       };
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
@@ -640,9 +644,9 @@ describe('main', function () {
         _patchedAt   : _patchRows[0]._patchedAt,
         _peerId      : 1,
         _sequenceId  : 1,
-        delta        :  JSON.stringify({ 2: [0, 0, 0, 0], 10: [0, 0, 0, 0] }),
+        delta        : JSON.stringify({ 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] }),
         patchVersion : 1,
-        tableName    : "_"
+        tableName    : '_'
       }]);
       assert.strictEqual(_patchRows.length, 1, 'All 1 patches should exist in pending_patches table');
       done();
@@ -652,8 +656,8 @@ describe('main', function () {
       app._generatePingStatMessage(false);
       const _patchRows = db.prepare('SELECT * FROM pending_patches').all();
       assert.equal(_patchRows.length, 0);
-      assert.deepStrictEqual(messageSentToPeer10, [{ type: 20 /* PEER_STATS */, at : 0, peer: 1, seq: 0, ver: 1, tab: '_', delta: { 2: [0, 0, 0, 0], 10: [0, 0, 0, 0] } }]);
-      assert.deepStrictEqual(messageSentToPeer2, [{ type: 20 /* PEER_STATS */ , at : 0, peer: 1, seq: 0, ver: 1, tab: '_', delta: { 2: [0, 0, 0, 0], 10: [0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer10, [{ type : 20 /* PEER_STATS */, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer2, [{ type : 20 /* PEER_STATS */ , at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] } }]);
       // create a persistent ping messgae
       app._generatePingStatMessage(true);
       assert(Math.abs(messageSentToPeer10[1].at - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
@@ -674,9 +678,9 @@ describe('main', function () {
     const patchApplyDelayMs = 20;
     let fakePeerSockets = {};
     let broadcastedMessages = [];
-    function createFakePeerSocket() {
+    function createFakePeerSocket () {
       return {
-        send: function(message) {
+        send : function (message) {
           broadcastedMessages.push(message);
         }
       };
@@ -701,29 +705,29 @@ describe('main', function () {
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
       app.addRemotePeer(3, fakePeerSockets[3]);
-      app.migrate([{ up: _testSchema, down: ''}]);
-      
+      app.migrate([{ up : _testSchema, down : ''}]);
+
       const _patches = [
-        { at: 1748505463330, peer: 1 , seq: 1 , ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: 1748505463330, peer: 1 , seq: 3 , ver: 1, tab: 'testA', delta: { id: 3, tenantId: 1, name: '3a' } },
-        { at: 1748505463330, peer: 1 , seq: 5 , ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a' } },
-        { at: 1748505463335, peer: 10, seq: 1 , ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: 1748505463336, peer: 10, seq: 3 , ver: 1, tab: 'testA', delta: { id: 3, tenantId: 1, name: '3a' } },
-        { at: 1748505463337, peer: 10, seq: 5 , ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a' } },
-        { at: 1748505463338, peer: 2 , seq: 1 , ver: 1, tab: 'testA', delta: { id: 6, tenantId: 2, name: '6a' } },
-        { at: 1748505463340, peer: 2 , seq: 4 , ver: 1, tab: 'testA', delta: { id: 9, tenantId: 2, name: '9a' } },
-        { at: 1748505463339, peer: 2 , seq: 2 , ver: 1, tab: 'testA', delta: { id: 7, tenantId: 2, name: '7a' } },
-        { at: 1748505463341, peer: 2 , seq: 10, ver: 2, tab: 'testB', delta: { id: 10, tenantId: 2, name: '10a' }},
-        { at: 1748505463342, peer: 2 , seq: 15, ver: 2, tab: 'testB', delta: { id: 15, tenantId: 2, name: '15a' }},
-        { at: 1748505463342, peer: 3 , seq: 1 , ver: 1, tab: 'testA', delta: { id: 1 , tenantId: 3, name: '30a' }},
-        { at: 1748505463342, peer: 3 , seq: 2 , ver: 1, tab: 'testA', delta: { id: 2 , tenantId: 3, name: '30a' }},
+        { at : 1748505463330, peer : 1 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : 1748505463330, peer : 1 , seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : 1748505463330, peer : 1 , seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : 1748505463335, peer : 10, seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : 1748505463336, peer : 10, seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : 1748505463337, peer : 10, seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : 1748505463338, peer : 2 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : 1748505463340, peer : 2 , seq : 4 , ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : 1748505463339, peer : 2 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
+        { at : 1748505463341, peer : 2 , seq : 10, ver : 2, tab : 'testB', delta : { id : 10, tenantId : 2, name : '10a' }},
+        { at : 1748505463342, peer : 2 , seq : 15, ver : 2, tab : 'testB', delta : { id : 15, tenantId : 2, name : '15a' }},
+        { at : 1748505463342, peer : 3 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1 , tenantId : 3, name : '30a' }},
+        { at : 1748505463342, peer : 3 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 2 , tenantId : 3, name : '30a' }},
       ];
-      
+
       // Apply all patches
       for (const patch of _patches) {
         app._onPatchReceivedFromPeers(patch);
       }
-      
+
       setTimeout(() => {
         assert.deepStrictEqual(app.status().peerStats, {
           2  : [1748505463342, 15, 1748505463339, 2],
@@ -746,24 +750,24 @@ describe('main', function () {
         assert.deepStrictEqual(
           _missingSequenceIds,
           [
-            { peerId: 2 , sequenceId: 2 , patchedAt: 1748505463339, nbMissingSequenceIds : 1},
-            { peerId: 2 , sequenceId: 4 , patchedAt: 1748505463340, nbMissingSequenceIds : 5},
-            { peerId: 2 , sequenceId: 10, patchedAt: 1748505463341, nbMissingSequenceIds : 4},
-            { peerId: 10, sequenceId: 1 , patchedAt: 1748505463335, nbMissingSequenceIds : 1},
-            { peerId: 10, sequenceId: 3 , patchedAt: 1748505463336, nbMissingSequenceIds : 1}
+            { peerId : 2 , sequenceId : 2 , patchedAt : 1748505463339, nbMissingSequenceIds : 1},
+            { peerId : 2 , sequenceId : 4 , patchedAt : 1748505463340, nbMissingSequenceIds : 5},
+            { peerId : 2 , sequenceId : 10, patchedAt : 1748505463341, nbMissingSequenceIds : 4},
+            { peerId : 10, sequenceId : 1 , patchedAt : 1748505463335, nbMissingSequenceIds : 1},
+            { peerId : 10, sequenceId : 3 , patchedAt : 1748505463336, nbMissingSequenceIds : 1}
           ]
         );
-        
+
         // Verify that peer sockets were called to request missing patches
         assert.strictEqual(broadcastedMessages.length, 5, 'Should have sent messages to request missing patches');
-        
+
         // Verify the content of each broadcasted message
         assert.deepStrictEqual(broadcastedMessages, [
-          { type: 30 /* MISSING_PATCH */, peer: 2 , minSeq: 3 , maxSeq: 3 , forPeer: 1 },
-          { type: 30 /* MISSING_PATCH */, peer: 2 , minSeq: 5 , maxSeq: 9 , forPeer: 1 },
-          { type: 30 /* MISSING_PATCH */, peer: 2 , minSeq: 11, maxSeq: 14, forPeer: 1 },
-          { type: 30 /* MISSING_PATCH */, peer: 10, minSeq: 2 , maxSeq: 2 , forPeer: 1 },
-          { type: 30 /* MISSING_PATCH */, peer: 10, minSeq: 4 , maxSeq: 4 , forPeer: 1 }
+          { type : 30 /* MISSING_PATCH */, peer : 2 , minSeq : 3 , maxSeq : 3 , forPeer : 1 },
+          { type : 30 /* MISSING_PATCH */, peer : 2 , minSeq : 5 , maxSeq : 9 , forPeer : 1 },
+          { type : 30 /* MISSING_PATCH */, peer : 2 , minSeq : 11, maxSeq : 14, forPeer : 1 },
+          { type : 30 /* MISSING_PATCH */, peer : 10, minSeq : 2 , maxSeq : 2 , forPeer : 1 },
+          { type : 30 /* MISSING_PATCH */, peer : 10, minSeq : 4 , maxSeq : 4 , forPeer : 1 }
         ]);
 
         // Verify that all stats are up to date
@@ -783,7 +787,7 @@ describe('main', function () {
       app.addRemotePeer(3, fakePeerSockets[3]);
       app.addRemotePeer(4, fakePeerSockets[4]);
       app.addRemotePeer(5, fakePeerSockets[5]);
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
 
       const _numPatches = 100000;
       const _threshold = 100; // ms
@@ -793,12 +797,12 @@ describe('main', function () {
       for (let i = 0; i < _numPatches; i++) {
         const peerId = Math.floor(Math.random() * _peerCount) + 2;
         _patches.push({
-          at: Date.now(),
-          peer: peerId,
-          seq: Math.floor(i / _peerCount) + 1, // Ensure some missing sequence IDs
-          ver: 1,
-          tab: 'testA',
-          delta: { id: i + 1, tenantId: peerId, name: `name${i}` }
+          at    : Date.now(),
+          peer  : peerId,
+          seq   : Math.floor(i / _peerCount) + 1, // Ensure some missing sequence IDs
+          ver   : 1,
+          tab   : 'testA',
+          delta : { id : i + 1, tenantId : peerId, name : `name${i}` }
         });
       }
       // Apply all patches
@@ -816,13 +820,13 @@ describe('main', function () {
         assert(_elapsedTime < _threshold, `Processing time (${_elapsedTime}ms) exceeded the threshold of ${_threshold}ms`);
         // Verify that we found some missing sequence IDs
         assert(_missingSequenceIds.length > 0, 'Should have found some missing sequence IDs');
-        //assert(_missingSequenceIds.length <= _peerCount, 'Should not return more missing sequence IDs than the number of peers of there are two may missing patches');
-        
+        // assert(_missingSequenceIds.length <= _peerCount, 'Should not return more missing sequence IDs than the number of peers of there are two may missing patches');
+
         done();
       }, patchApplyDelayMs);
     });
 
-    
+
   });
 
   describe('_onRequestForMissingPatchFromPeers', function () {
@@ -830,9 +834,9 @@ describe('main', function () {
     const patchApplyDelayMs = 20;
     let fakePeerSockets = {};
     let messagesPerPeer = {};
-    function createFakePeerSocket(peerId) {
+    function createFakePeerSocket (peerId) {
       return {
-        send: function(message) {
+        send : function (message) {
           messagesPerPeer[peerId].push(message);
         }
       };
@@ -857,18 +861,18 @@ describe('main', function () {
       app = SQLiteOnSteroid(db, 1);
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at: _constantTimestamp, peer: 3 , seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: _constantTimestamp, peer: 3 , seq: 3, ver: 2, tab: 'testB', delta: { id: 3, tenantId: 1, name: '3a' } }, // missing B
-        { at: _constantTimestamp, peer: 3 , seq: 5, ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a' } },
-        { at: _constantTimestamp, peer: 10, seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: _constantTimestamp, peer: 10, seq: 3, ver: 2, tab: 'testA', delta: { id: 3, tenantId: 1, name: '3a' } },
-        { at: _constantTimestamp, peer: 10, seq: 5, ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a' } },
-        { at: _constantTimestamp, peer: 2 , seq: 1, ver: 1, tab: 'testA', delta: { id: 6, tenantId: 2, name: '6a' } },
-        { at: _constantTimestamp, peer: 2 , seq: 2, ver: 1, tab: 'testA', delta: { id: 7, tenantId: 2, name: '7a' } }, // missing A
-        { at: _constantTimestamp, peer: 2 , seq: 4, ver: 1, tab: 'testA', delta: { id: 9, tenantId: 2, name: '9a' } },
+        { at : _constantTimestamp, peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : _constantTimestamp, peer : 3 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
+        { at : _constantTimestamp, peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : _constantTimestamp, peer : 10, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : _constantTimestamp, peer : 10, seq : 3, ver : 2, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : _constantTimestamp, peer : 10, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : _constantTimestamp, peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : _constantTimestamp, peer : 2 , seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } }, // missing A
+        { at : _constantTimestamp, peer : 2 , seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -879,12 +883,12 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 3, maxSeq : 3, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 1, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type: 10 /* PATCH */, at: _constantTimestamp, peer: 3, seq: 3, ver: 2, tab: 'testB', delta: { id: 3, tenantId: 1, name: '3a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10 /* PATCH */, at : _constantTimestamp, peer : 3, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 2, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 1, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type: 10, at: _constantTimestamp, peer: 2, seq: 2, ver: 1, tab: 'testA', delta: { id: 7, tenantId: 2, name: '7a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : _constantTimestamp, peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', createdAt : null, deletedAt : null } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 300, maxSeq : 300, forPeer : 10 });
@@ -901,19 +905,19 @@ describe('main', function () {
       app = SQLiteOnSteroid(db, 1);
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
-      app.migrate([{ up: _testSchema, down: ''}]);
+      app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at: _constantTimestamp, peer: 3 , seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: _constantTimestamp, peer: 3 , seq: 3, ver: 1, tab: 'testA', delta: { id: 3, tenantId: 1, name: '3a' } },
-        { at: _constantTimestamp, peer: 3 , seq: 5, ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a' } },
-        { at: _constantTimestamp, peer: 2 , seq: 1, ver: 1, tab: 'testA', delta: { id: 1, tenantId: 1, name: '1a' } },
-        { at: _constantTimestamp, peer: 2 , seq: 3, ver: 2, tab: 'testB', delta: { id: 3, tenantId: 1, name: '3a' } }, // missing B
-        { at: _constantTimestamp, peer: 2 , seq: 5, ver: 2, tab: 'testB', delta: { id: 5, tenantId: 1, name: '5a' } }, // missing B
-        { at: _constantTimestamp, peer: 2 , seq: 6, ver: 2, tab: 'testB', delta: { id: 6, tenantId: 1, name: '6a' } }, // missing B
-        { at: _constantTimestamp, peer: 3 , seq: 6, ver: 1, tab: 'testA', delta: { id: 6, tenantId: 2, name: '6a' } },
-        { at: _constantTimestamp, peer: 10, seq: 2, ver: 1, tab: 'testA', delta: { id: 7, tenantId: 2, name: '7a' } },
-        { at: _constantTimestamp, peer: 10, seq: 4, ver: 1, tab: 'testA', delta: { id: 9, tenantId: 2, name: '9a' } },
+        { at : _constantTimestamp, peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : _constantTimestamp, peer : 3 , seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : _constantTimestamp, peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : _constantTimestamp, peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : _constantTimestamp, peer : 2 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
+        { at : _constantTimestamp, peer : 2 , seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } }, // missing B
+        { at : _constantTimestamp, peer : 2 , seq : 6, ver : 2, tab : 'testB', delta : { id : 6, tenantId : 1, name : '6a' } }, // missing B
+        { at : _constantTimestamp, peer : 3 , seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : _constantTimestamp, peer : 10, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
+        { at : _constantTimestamp, peer : 10, seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -924,15 +928,15 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 5, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 2, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type: 10, at: _constantTimestamp, peer: 2, seq: 3, ver: 2, tab: 'testB', delta: { id: 3, tenantId: 1, name: '3a' } });
-        assert.deepStrictEqual(messagesPerPeer[10][1], { type: 10, at: _constantTimestamp, peer: 2, seq: 5, ver: 2, tab: 'testB', delta: { id: 5, tenantId: 1, name: '5a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10, at : _constantTimestamp, peer : 2, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][1], { type : 10, at : _constantTimestamp, peer : 2, seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 2, maxSeq : 100, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 3, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type: 10, at: _constantTimestamp, peer: 3, seq: 3, ver: 1, tab: 'testA', delta: { id: 3, tenantId: 1, name: '3a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][1], { type: 10, at: _constantTimestamp, peer: 3, seq: 5, ver: 1, tab: 'testA', delta: { id: 5, tenantId: 1, name: '5a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][2], { type: 10, at: _constantTimestamp, peer: 3, seq: 6, ver: 1, tab: 'testA', delta: { id: 6, tenantId: 2, name: '6a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : _constantTimestamp, peer : 3, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][1], { type : 10, at : _constantTimestamp, peer : 3, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][2], { type : 10, at : _constantTimestamp, peer : 3, seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', createdAt : null, deletedAt : null } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 200, maxSeq : 200, forPeer : 10 });
@@ -947,17 +951,17 @@ describe('main', function () {
       }, patchApplyDelayMs);
     });
 
-    
+
   });
 
-  
+
 });
 
 function connect (filename = ':memory:') {
   // multi thread https://github.com/WiseLibs/better-sqlite3/blob/master/docs/performance.md
   // Follow better-sqlite3 API (fatser and same as Bun.js)
   const db = new Database(filename, {
-   // verbose : console.log // TODO remove
+    // verbose : console.log // TODO remove
   });
   // Enable WAL mode:
   // - significantly faster.

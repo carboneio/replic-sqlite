@@ -7,13 +7,13 @@ const debug = require('debug');
 
 describe('migrate', function () {
   let db, app;
-  
+
   beforeEach(function () {
     db = connect(); // memory db
     app = SQLiteOnSteroid(db);
 
   });
-  
+
   afterEach(function () {
     close(db);
   });
@@ -22,21 +22,21 @@ describe('migrate', function () {
     it('should apply new migrations in order', function () {
       const appMigrations = [
         {
-          up: 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test1'
+          up   : 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test1'
         },
         {
-          up: 'CREATE TABLE test2 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test2'
+          up   : 'CREATE TABLE test2 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test2'
         }
       ];
 
       const result = app.migrate(appMigrations);
-      
+
       // Verify result
       assert.deepStrictEqual(result, {
-        currentVersion: 2,
-        previousVersion: 0
+        currentVersion  : 2,
+        previousVersion : 0
       });
 
       // Verify tables were created
@@ -57,18 +57,18 @@ describe('migrate', function () {
       // First apply some migrations
       const initialMigrations = [
         {
-          up: 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test1'
+          up   : 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test1'
         }
       ];
       app.migrate(initialMigrations);
 
       // Try to apply the same migrations again
       const result = app.migrate(initialMigrations);
-      
+
       assert.deepStrictEqual(result, {
-        currentVersion: 1,
-        previousVersion: 1
+        currentVersion  : 1,
+        previousVersion : 1
       });
 
       // Verify no duplicate tables were created
@@ -80,29 +80,29 @@ describe('migrate', function () {
       // Create migrations that depend on each other
       const dependentMigrations = [
         {
-          up: 'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)',
-          down: 'DROP TABLE users'
+          up   : 'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)',
+          down : 'DROP TABLE users'
         },
         {
-          up: 'ALTER TABLE users RENAME COLUMN name TO full_name',
-          down: 'ALTER TABLE users RENAME COLUMN full_name TO name'
+          up   : 'ALTER TABLE users RENAME COLUMN name TO full_name',
+          down : 'ALTER TABLE users RENAME COLUMN full_name TO name'
         },
         {
-          up: 'ALTER TABLE users RENAME COLUMN full_name TO display_name',
-          down: 'ALTER TABLE users RENAME COLUMN display_name TO full_name'
+          up   : 'ALTER TABLE users RENAME COLUMN full_name TO display_name',
+          down : 'ALTER TABLE users RENAME COLUMN display_name TO full_name'
         }
       ];
 
       // Execute migrations
       const result = app.migrate(dependentMigrations);
-      
+
       assert.deepStrictEqual(result, {
-        currentVersion: 3,
-        previousVersion: 0
+        currentVersion  : 3,
+        previousVersion : 0
       });
 
       // Verify table was created and columns were renamed in correct order
-      const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+      const tableInfo = db.prepare('PRAGMA table_info(users)').all();
       assert.strictEqual(tableInfo.length, 2); // id and display_name columns
       assert.ok(tableInfo.some(col => col.name === 'id'));
       assert.ok(tableInfo.some(col => col.name === 'display_name'));
@@ -116,12 +116,12 @@ describe('migrate', function () {
       // First apply some migrations
       const initialMigrations = [
         {
-          up: 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test1'
+          up   : 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test1'
         },
         {
-          up: 'CREATE TABLE test2 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test2'
+          up   : 'CREATE TABLE test2 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test2'
         }
       ];
       app.migrate(initialMigrations);
@@ -129,10 +129,10 @@ describe('migrate', function () {
       // Now downgrade to version 1
       const downgradeMigrations = [initialMigrations[0]];
       const result = app.migrate(downgradeMigrations);
-      
+
       assert.deepStrictEqual(result, {
-        currentVersion: 1,
-        previousVersion: 2
+        currentVersion  : 1,
+        previousVersion : 2
       });
 
       // Verify test2 table was dropped
@@ -150,18 +150,18 @@ describe('migrate', function () {
       // First apply some migrations
       const initialMigrations = [
         {
-          up: 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test1'
+          up   : 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test1'
         }
       ];
       app.migrate(initialMigrations);
 
       // Now rollback completely
       const result = app.migrate([]);
-      
+
       assert.deepStrictEqual(result, {
-        currentVersion: 0,
-        previousVersion: 1
+        currentVersion  : 0,
+        previousVersion : 1
       });
 
       // Verify table was dropped
@@ -177,16 +177,16 @@ describe('migrate', function () {
       // First apply all migrations
       const dependentMigrations = [
         {
-          up: 'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)',
-          down: 'DROP TABLE users'
+          up   : 'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)',
+          down : 'DROP TABLE users'
         },
         {
-          up: 'ALTER TABLE users RENAME COLUMN name TO full_name',
-          down: 'ALTER TABLE users RENAME COLUMN full_name TO name'
+          up   : 'ALTER TABLE users RENAME COLUMN name TO full_name',
+          down : 'ALTER TABLE users RENAME COLUMN full_name TO name'
         },
         {
-          up: 'ALTER TABLE users RENAME COLUMN full_name TO display_name',
-          down: 'ALTER TABLE users RENAME COLUMN display_name TO full_name'
+          up   : 'ALTER TABLE users RENAME COLUMN full_name TO display_name',
+          down : 'ALTER TABLE users RENAME COLUMN display_name TO full_name'
         }
       ];
       app.migrate(dependentMigrations);
@@ -194,14 +194,14 @@ describe('migrate', function () {
       // Now downgrade to version 1 (original table structure)
       const downgradeMigrations = [dependentMigrations[0]];
       const result = app.migrate(downgradeMigrations);
-      
+
       assert.deepStrictEqual(result, {
-        currentVersion: 1,
-        previousVersion: 3
+        currentVersion  : 1,
+        previousVersion : 3
       });
 
       // Verify table structure was restored to original state
-      const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+      const tableInfo = db.prepare('PRAGMA table_info(users)').all();
       assert.strictEqual(tableInfo.length, 2); // id and name columns
       assert.ok(tableInfo.some(col => col.name === 'id'));
       assert.ok(tableInfo.some(col => col.name === 'name'));
@@ -219,12 +219,12 @@ describe('migrate', function () {
     it('should rollback transaction if migration fails', function () {
       const appMigrations = [
         {
-          up: 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
-          down: 'DROP TABLE test1'
+          up   : 'CREATE TABLE test1 (id INTEGER PRIMARY KEY)',
+          down : 'DROP TABLE test1'
         },
         {
-          up: 'INVALID SQL STATEMENT', // This will fail
-          down: 'DROP TABLE test2'
+          up   : 'INVALID SQL STATEMENT', // This will fail
+          down : 'DROP TABLE test2'
         }
       ];
 
