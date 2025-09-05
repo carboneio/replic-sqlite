@@ -1,0 +1,29 @@
+{
+  "name": "replic-sqlite",
+  "version": "0.1.0",
+  "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 500 LOC only",
+  "main": "lib/index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "./node_modules/.bin/mocha test --timeout 10000 --exit",
+    "test:watch": "./node_modules/.bin/mocha -u bdd -t 10000 -w -b --reporter-option maxDiffSize=64632",
+    "lint": "eslint lib/ test/",
+    "lint:fix": "eslint lib/ test/ --fix"
+  },
+  "author": "David Grelaud",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@eslint/eslintrc": "=3.3.1",
+    "@eslint/js": "=9.35.0",
+    "eslint": "=9.35.0",
+    "globals": "=16.3.0",
+    "mocha": "=11.7.2"
+  },
+  "dependencies": {
+    "debug": "=4.4.1",
+    "better-sqlite3": "=12.2.0"
+  }
+}
