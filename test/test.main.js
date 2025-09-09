@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const Database  = require('better-sqlite3');
 const debug = require('debug');
+const { simplifyStats, removeLastTimestampInStats } = require('./helper.js');
 
 describe('main', function () {
   const _testSchema = `
@@ -644,7 +645,7 @@ describe('main', function () {
         _patchedAt   : _patchRows[0]._patchedAt,
         _peerId      : 1,
         _sequenceId  : 1,
-        delta        : JSON.stringify({ 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] }),
+        delta        : JSON.stringify({ 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] }),
         patchVersion : 1,
         tableName    : '_'
       }]);
@@ -656,8 +657,8 @@ describe('main', function () {
       app._generatePingStatMessage(false);
       const _patchRows = db.prepare('SELECT * FROM pending_patches').all();
       assert.equal(_patchRows.length, 0);
-      assert.deepStrictEqual(messageSentToPeer10, [{ type : 20 /* PEER_STATS */, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] } }]);
-      assert.deepStrictEqual(messageSentToPeer2, [{ type : 20 /* PEER_STATS */ , at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0], 10 : [0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer10, [{ type : 20 /* PEER_STATS */, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer2, [{ type : 20 /* PEER_STATS */ , at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
       // create a persistent ping messgae
       app._generatePingStatMessage(true);
       assert(Math.abs(messageSentToPeer10[1].at - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
@@ -729,16 +730,20 @@ describe('main', function () {
       }
 
       setTimeout(() => {
-        assert.deepStrictEqual(app.status().peerStats, {
+        assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats), {
           2  : [1748505463342, 15, 1748505463339, 2],
           3  : [1748505463342, 2 , 1748505463342, 2],
           10 : [1748505463337, 5 , 1748505463335, 1]
         });
         const { peerStats } = app.status();
+        // Check that the last message timestamp for peer 2 is approximately now
+        const _lastMsgTimestamp = peerStats['2'][app.LAST_MESSAGE_TIMETSAMP];
+        // Should be within 200ms of now (allowing for test delays)
+        assert.ok(Math.abs(_lastMsgTimestamp - Date.now()) < 2000, `Expected lastMsgTimestamp ~ now, got ${_lastMsgTimestamp}`);
         // Simulate fake missing patches for peer 3 to verify that _getMissingPatches fixes the stats
         peerStats['3'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = 1748505463000;
         peerStats['3'][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID] = 0;
-        assert.deepStrictEqual(app.status().peerStats['3'], [1748505463342, 2 , 1748505463000, 0]);
+        assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats)['3'], [1748505463342, 2 , 1748505463000, 0]);
         // same for peer 2
         peerStats['2'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = 1748505463338;
         peerStats['2'][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID] = 1;
@@ -771,7 +776,7 @@ describe('main', function () {
         ]);
 
         // Verify that all stats are up to date
-        assert.deepStrictEqual(app.status().peerStats, {
+        assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats), {
           2  : [1748505463342, 15, 1748505463339, 2],
           3  : [1748505463342, 2 , 1748505463342, 2],
           10 : [1748505463337, 5 , 1748505463335, 1]
