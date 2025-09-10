@@ -6,6 +6,7 @@ const Database  = require('better-sqlite3');
 const debug = require('debug');
 const EventEmitter = require('events');
 const { simplifyStats } = require('./helper.js');
+const hlc = require('../lib/hlc.js');
 
 const PING = 20;
 const PATCH = 10;
@@ -32,6 +33,10 @@ describe('main', function () {
 
     CREATE INDEX testA_patches_at_idx ON testA_patches (_patchedAt);
   `;
+
+  afterEach (function () {
+    hlc._reset();
+  });
 
   describe('startup + receives ping indicating that the node is not up to date.', function () {
     let db, app;
@@ -88,12 +93,12 @@ describe('main', function () {
       const _now = Date.now();
       const _status = app.status();
       assert.deepStrictEqual(_status.lastSequenceId, 0);
-      _eventEmitter100.emit('message', { type : PATCH, at : _now-2, peer : 100, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } });
+      _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-2), peer : 100, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } });
       // node 200 send a message at the same time as node 100, node 200 wins (higher node id wins)
-      _eventEmitter200.emit('message', { type : PATCH, at : _now-1, peer : 200, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1c' } });
-      _eventEmitter100.emit('message', { type : PATCH, at : _now-1, peer : 100, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1b' } });
-      _eventEmitter100.emit('message', { type : PATCH, at : _now  , peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
-      assert.deepStrictEqual(_status.peerStats[100].slice(0,-1), [_now, 5, _now-1, 2]);
+      _eventEmitter200.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 200, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1c' } });
+      _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 100, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1b' } });
+      _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
+      assert.deepStrictEqual(_status.peerStats[100].slice(0,-1), [hlc.from(_now), 5, hlc.from(_now-1), 2]);
       // should insert rows as oon as possible
       setTimeout(() => {
         assert.deepStrictEqual(messageSentToPeer100.length, 0);
@@ -105,13 +110,13 @@ describe('main', function () {
         // Check that a message was sent to peer 100 for the missing patch (seq 3)
         assert.strictEqual(messageSentToPeer100.length, 2, 'Should have sent two messages to peer 100 for missing patch');
         assert.deepStrictEqual(simplifyStats(messageSentToPeer100), [
-          { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [_now, 5, _now - 1, 2], '200' : [_now-1, 1, _now-1, 1] } },
+          { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } },
           { type : 30, peer : 100, minSeq : 3, maxSeq : 4, forPeer : 1 }
         ]);
 
         // accept duplicated message
-        _eventEmitter100.emit('message', { type : PATCH, at : _now  , peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
-        _eventEmitter100.emit('message', { type : PATCH, at : _now-1, peer : 100, seq : 3, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5c' } });
+        _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
+        _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 100, seq : 3, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5c' } });
 
         setTimeout(() => {
           heartBeatSync(app);
@@ -119,17 +124,17 @@ describe('main', function () {
           assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
           assert.strictEqual(messageSentToPeer100.length, 4, 'Should have sent four messages to peer 100 for missing patch');
-          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [_now, 5, _now - 1, 3], '200' : [_now-1, 1, _now-1, 1] } });
+          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 3], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
           assert.deepStrictEqual(messageSentToPeer100[3], { type : 30, peer : 100, minSeq : 4, maxSeq : 4, forPeer : 1 });
 
-          _eventEmitter100.emit('message', { type : PATCH, at : _now, peer : 100, seq : 4, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5z' } });
+          _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 4, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5z' } });
           setTimeout(() => {
             heartBeatSync(app);
             const _tableARows = db.prepare('SELECT * FROM testA').all();
             assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
             assert.strictEqual(messageSentToPeer100.length, 5, 'Should have sent five messages to peer 100 for missing patch');
-            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [_now, 5, _now, 4], '200' : [_now-1, 1, _now-1, 1] } });
+            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
             done();
           }, 15);
         }, 15);

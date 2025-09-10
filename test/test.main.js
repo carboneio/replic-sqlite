@@ -1,12 +1,19 @@
 const assert = require('assert');
 const SQLiteOnSteroid = require('../lib/index.js');
+const hlc = require('../lib/hlc.js');
 const path = require('path');
 const fs = require('fs');
 const Database  = require('better-sqlite3');
 const debug = require('debug');
 const { simplifyStats, removeLastTimestampInStats } = require('./helper.js');
+const MockDate = require('mockdate');
 
 describe('main', function () {
+
+  afterEach (function () {
+    hlc._reset();
+  });
+
   const _testSchema = `
     CREATE TABLE testA (
       id            INTEGER NOT NULL,
@@ -257,8 +264,8 @@ describe('main', function () {
       db.exec(`
         INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name, deletedAt, createdAt)
         VALUES 
-          (${existingPatchTimestamp}, 1, 1800, 10, 20, 'existing1', 100, 200),
-          (${existingPatchTimestamp + 100}, 2, 1800, 11, 21, 'existing2', 101, 201)
+          (${hlc.from(existingPatchTimestamp)}, 1, 1800, 10, 20, 'existing1', 100, 200),
+          (${hlc.from(existingPatchTimestamp + 100)}, 2, 1800, 11, 21, 'existing2', 101, 201)
       `);
       app = SQLiteOnSteroid(db, 1800);
       app.addRemotePeer(100, fakePeerSockets[100]);
@@ -314,9 +321,9 @@ describe('main', function () {
       db.exec(`
         INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name, deletedAt, createdAt)
         VALUES 
-          (${existingPatchTimestamp}      , 1, 1800, 10, 20, 'existing1', 100, 200),
-          (${existingPatchTimestamp + 200}, 10, 100, 10, 20, 'existing1', 100, 200),
-          (${existingPatchTimestamp + 100}, 2, 1800, 11, 21, 'existing2', 101, 201)
+          (${hlc.from(existingPatchTimestamp)}      , 1, 1800, 10, 20, 'existing1', 100, 200),
+          (${hlc.from(existingPatchTimestamp + 200)}, 10, 100, 10, 20, 'existing1', 100, 200),
+          (${hlc.from(existingPatchTimestamp + 100)}, 2, 1800, 11, 21, 'existing2', 101, 201)
       `);
       app = SQLiteOnSteroid(db, 1800);
       app.addRemotePeer(100, fakePeerSockets[100]);
@@ -324,8 +331,8 @@ describe('main', function () {
       const _preExistingPatch1 = `
         INSERT INTO pending_patches (_patchedAt, _peerId, _sequenceId, patchVersion, tableName, delta)
         VALUES 
-          (${existingPatchTimestamp + 200}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
-          (${existingPatchTimestamp + 300}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
+          (${hlc.from(existingPatchTimestamp + 200)}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
+          (${hlc.from(existingPatchTimestamp + 300)}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
       `;
       app.migrate([{ up : _preExistingPatch1, down : ''}]); // Empty table migration since schema already exists
       // Insert a new patch - should continue from sequenceId 4
@@ -366,17 +373,17 @@ describe('main', function () {
       db.exec(`
         INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name, deletedAt, createdAt)
         VALUES 
-          (${existingPatchTimestamp}      , 1, 1800, 10, 20, 'existing1', 100, 200),
-          (${existingPatchTimestamp - 500}, 10, 100, 10, 20, 'existing1', 100, 200),
-          (${existingPatchTimestamp - 600}, 2, 1800, 11, 21, 'existing2', 101, 201)
+          (${hlc.from(existingPatchTimestamp)}      , 1, 1800, 10, 20, 'existing1', 100, 200),
+          (${hlc.from(existingPatchTimestamp - 500)}, 10, 100, 10, 20, 'existing1', 100, 200),
+          (${hlc.from(existingPatchTimestamp - 600)}, 2, 1800, 11, 21, 'existing2', 101, 201)
       `);
       app = SQLiteOnSteroid(db, 1800, { maxPatchRetentionMs : 100 });
       // Insert pre-existing patches in pending_patches with higher sequenceId, after migration of sqlite  on steroid
       const _preExistingPatch1 = `
         INSERT INTO pending_patches (_patchedAt, _peerId, _sequenceId, patchVersion, tableName, delta)
         VALUES 
-          (${existingPatchTimestamp - 50}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
-          (${existingPatchTimestamp - 300}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
+          (${hlc.from(existingPatchTimestamp - 50)}, 1800, 3, 1, 'testA', jsonb('{"id":15,"tenantId":25,"name":"pending1","deletedAt":105,"createdAt":205}')),
+          (${hlc.from(existingPatchTimestamp - 300)}, 1800, 4, 1, 'testA', jsonb('{"id":16,"tenantId":26,"name":"pending2","deletedAt":106,"createdAt":206}'))
       `;
       app.migrate([{ up : _preExistingPatch1, down : ''}]);
       // Delete old patches
@@ -384,11 +391,11 @@ describe('main', function () {
       // Verify all patches including the new one
       const _allPatches = db.prepare('SELECT * FROM testA_patches ORDER BY _sequenceId').all();
       assert.strictEqual(_allPatches.length, 1, 'Should now have 1 patch in testA_patches');
-      assert.strictEqual( _allPatches[0]._patchedAt, existingPatchTimestamp);
+      assert.strictEqual(hlc.toUnixTimestamp(_allPatches[0]._patchedAt), existingPatchTimestamp);
 
       const _allPendingPatches = db.prepare('SELECT * FROM pending_patches ORDER BY _sequenceId').all();
       assert.strictEqual(_allPendingPatches.length, 1, 'Should now have 1 patch in pending_patches');
-      assert.strictEqual( _allPendingPatches[0]._patchedAt, existingPatchTimestamp - 50);
+      assert.strictEqual(hlc.toUnixTimestamp(_allPendingPatches[0]._patchedAt), existingPatchTimestamp - 50);
       done();
     });
   });
@@ -414,14 +421,14 @@ describe('main', function () {
 
     it('should merge patches coming from peers. Should ignore patch coming from myself. ', function (done) {
       const baseTimestamp = Date.now();
-      const _rowPatch1 = { at : baseTimestamp + 1, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
-      const _rowPatch2 = { at : baseTimestamp + 2, peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2b' , deletedAt : 3, createdAt : 300 } };
-      const _rowPatch3 = { at : baseTimestamp + 3, peer : 20, seq : 3, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2c'                                } };
-      const _rowPatch4 = { at : baseTimestamp + 4, peer : 20, seq : 4, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30a', deletedAt : 4, createdAt : 5 } };
-      const _rowPatch5 = { at : baseTimestamp + 5, peer : 20, seq : 5, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30b', deletedAt : 5, createdAt : 6 } };
-      const _rowPatch6 = { at : baseTimestamp + 6, peer : 20, seq : 6, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,               deletedAt : 7                } };
-      const _rowPatch7 = { at : baseTimestamp + 7, peer : 20, seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 8 } };
-      const _rowPatch8 = { at : baseTimestamp + 8, peer : 1 , seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 9 } };
+      const _rowPatch1 = { at : hlc.from(baseTimestamp + 1), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   } };
+      const _rowPatch2 = { at : hlc.from(baseTimestamp + 2), peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2b' , deletedAt : 3, createdAt : 300 } };
+      const _rowPatch3 = { at : hlc.from(baseTimestamp + 3), peer : 20, seq : 3, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2 , name : '2c'                                } };
+      const _rowPatch4 = { at : hlc.from(baseTimestamp + 4), peer : 20, seq : 4, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30a', deletedAt : 4, createdAt : 5 } };
+      const _rowPatch5 = { at : hlc.from(baseTimestamp + 5), peer : 20, seq : 5, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30, name : '30b', deletedAt : 5, createdAt : 6 } };
+      const _rowPatch6 = { at : hlc.from(baseTimestamp + 6), peer : 20, seq : 6, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,               deletedAt : 7                } };
+      const _rowPatch7 = { at : hlc.from(baseTimestamp + 7), peer : 20, seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 8 } };
+      const _rowPatch8 = { at : hlc.from(baseTimestamp + 8), peer : 1 , seq : 7, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 30,                              createdAt : 9 } };
       const _patches = [_rowPatch1, _rowPatch2, _rowPatch3, _rowPatch4, _rowPatch5, _rowPatch6, _rowPatch7, _rowPatch8];
 
       // Apply all patches sequentially
@@ -453,13 +460,13 @@ describe('main', function () {
 
     it('should merge patches coming, sort patch by date, then by peer id, then by sequence id', function (done) {
       const baseTimestamp = Date.now();
-      const _rowPatch1 = { at : baseTimestamp + 1, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
-      const _rowPatch2 = { at : baseTimestamp + 1, peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
-      const _rowPatch3 = { at : baseTimestamp + 1, peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
-      const _rowPatch4 = { at : baseTimestamp + 2, peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
-      const _rowPatch5 = { at : baseTimestamp + 2, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
-      const _rowPatch6 = { at : baseTimestamp + 3, peer : 18, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
-      const _rowPatch7 = { at : baseTimestamp + 3, peer : 18, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2g' } };
+      const _rowPatch1 = { at : hlc.from(baseTimestamp + 1), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : hlc.from(baseTimestamp + 1), peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
+      const _rowPatch3 = { at : hlc.from(baseTimestamp + 1), peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
+      const _rowPatch4 = { at : hlc.from(baseTimestamp + 2), peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
+      const _rowPatch5 = { at : hlc.from(baseTimestamp + 2), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
+      const _rowPatch6 = { at : hlc.from(baseTimestamp + 3), peer : 18, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
+      const _rowPatch7 = { at : hlc.from(baseTimestamp + 3), peer : 18, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2g' } };
       const _patches = [_rowPatch7, _rowPatch3, _rowPatch1, _rowPatch6, _rowPatch2, _rowPatch5, _rowPatch4];
       // Apply all patches sequentially
       for (const _patch of _patches) {
@@ -481,14 +488,52 @@ describe('main', function () {
       }, patchApplyDelayMs);
     });
 
+    it('should merge patches coming other peer, and should create new patch with a timestamp than last patch receive from peers even if there is a time skew', function (done) {
+      MockDate.set(1759276800000); // 1759276800000
+      const baseTimestamp = Date.now();
+      const _rowPatch1 = { at : hlc.from(baseTimestamp + 1), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : hlc.from(baseTimestamp + 0), peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
+      const _rowPatch3 = { at : hlc.from(baseTimestamp + 1), peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
+      const _rowPatch7 = { at : hlc.from(baseTimestamp + 1), peer : 18, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2g' } };
+      const _patches = [_rowPatch7, _rowPatch3, _rowPatch1, _rowPatch2];
+      for (const _patch of _patches) {
+        app._onPatchReceivedFromPeers(_patch);
+      }
+      // Set the time of the node in the past to simulate a time skew
+      MockDate.set(1759276800000-100); // 1759276800000
+      // This patch is created after the reception of other peer's patches.
+      // Even if the Node leaves in the past (clock not synchronized), it should create a new patch with a timestamp greater than the last patch received from peers.
+      app.upsert('testA', { id : 1, tenantId : 2, name : '2d' }, (err) => {
+        if (err) {
+          throw err;
+        }
+        // Verify rows in patches table
+        const _patchRows = db.prepare('SELECT * FROM testA_patches ORDER BY _peerId').all();
+        assert.strictEqual(_patchRows.length, 5, 'All 5 patches should exist in patches table');
+        assert.strictEqual(_patchRows[0]._peerId, 1);
+        assert.strictEqual(hlc.toUnixTimestamp(_patchRows[0]._patchedAt), baseTimestamp+1);
+        assert.strictEqual(hlc.toCounter(_patchRows[0]._patchedAt), 1);
+
+        // Verify rows in main table
+        setTimeout(() => {
+          const _mainRows = db.prepare('SELECT * FROM testA').all();
+          assert.strictEqual(_mainRows.length, 1, 'One row should exist in main table');
+          const _row1 = _mainRows.find(row => row.id === 1 && row.tenantId === 2);
+          assert.strictEqual(_row1.name, '2d');
+          MockDate.reset();
+          done();
+        }, patchApplyDelayMs);
+      });
+    });
+
     it('should merge patches with Date.now() timestamp, sorting by peer id and sequence id', function (done) {
       const _constantTimestamp = Date.now(); // A fixed timestamp for all patches
-      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
-      const _rowPatch2 = { at : _constantTimestamp, peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
-      const _rowPatch3 = { at : _constantTimestamp, peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
-      const _rowPatch4 = { at : _constantTimestamp, peer : 19, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
-      const _rowPatch5 = { at : _constantTimestamp, peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
-      const _rowPatch6 = { at : _constantTimestamp, peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
+      const _rowPatch1 = { at : hlc.from(_constantTimestamp), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : hlc.from(_constantTimestamp), peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2b' } };
+      const _rowPatch3 = { at : hlc.from(_constantTimestamp), peer : 19, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2c' } };
+      const _rowPatch4 = { at : hlc.from(_constantTimestamp), peer : 19, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2d' } };
+      const _rowPatch5 = { at : hlc.from(_constantTimestamp), peer : 21, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2e' } };
+      const _rowPatch6 = { at : hlc.from(_constantTimestamp), peer : 21, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2f' } };
       const _patches = [_rowPatch3, _rowPatch6, _rowPatch1, _rowPatch5, _rowPatch2, _rowPatch4];
 
       // Apply all patches sequentially
@@ -513,8 +558,8 @@ describe('main', function () {
 
     it('should store stats in pending_patches table', function (done) {
       const _constantTimestamp = Date.now(); // A fixed timestamp for all patches
-      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1 , ver : 1, tab : '_', delta : { 20 : [0,0] } };
-      const _rowPatch2 = { at : _constantTimestamp, peer : 10, seq : 20, ver : 2, tab : '_', delta : { 20 : [1,1] } };
+      const _rowPatch1 = { at : hlc.from(_constantTimestamp), peer : 20, seq : 1 , ver : 1, tab : '_', delta : { 20 : [0,0] } };
+      const _rowPatch2 = { at : hlc.from(_constantTimestamp), peer : 10, seq : 20, ver : 2, tab : '_', delta : { 20 : [1,1] } };
       const _patches = [_rowPatch1, _rowPatch2];
 
       // Apply all patches sequentially
@@ -525,14 +570,14 @@ describe('main', function () {
       const _patchRows = db.prepare('SELECT *, json(delta) as delta FROM pending_patches').all();
       assert.strictEqual(_patchRows.length, 2, 'All 2 patches should exist in pending_patches table');
       assert.deepStrictEqual(_patchRows, [{
-        _patchedAt   : _constantTimestamp,
+        _patchedAt   : hlc.from(_constantTimestamp),
         _peerId      : 20,
         _sequenceId  : 1,
         delta        : '{\"20\":[0,0]}',
         patchVersion : 1,
         tableName    : '_'
       }, {
-        _patchedAt   : _constantTimestamp,
+        _patchedAt   : hlc.from(_constantTimestamp),
         _peerId      : 10,
         _sequenceId  : 20,
         delta        : '{\"20\":[1,1]}',
@@ -545,9 +590,9 @@ describe('main', function () {
 
     it('should save patches with mismatching version to pending_patches table and apply them later', function (done) {
       const _constantTimestamp = Date.now();
-      const _rowPatch1 = { at : _constantTimestamp, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
-      const _rowPatch2 = { at : _constantTimestamp, peer : 21, seq : 2, ver : 2, tab : 'testA', delta : { id : 2, tenantId : 3, name : '3a' } };
-      const _rowPatch3 = { at : _constantTimestamp, peer : 22, seq : 3, ver : 3, tab : 'testA', delta : { id : 3, tenantId : 4, name : '4a' } };
+      const _rowPatch1 = { at : hlc.from(_constantTimestamp), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };
+      const _rowPatch2 = { at : hlc.from(_constantTimestamp), peer : 21, seq : 2, ver : 2, tab : 'testA', delta : { id : 2, tenantId : 3, name : '3a' } };
+      const _rowPatch3 = { at : hlc.from(_constantTimestamp), peer : 22, seq : 3, ver : 3, tab : 'testA', delta : { id : 3, tenantId : 4, name : '4a' } };
 
       // Apply all patches
       app._onPatchReceivedFromPeers(_rowPatch1);
@@ -588,7 +633,7 @@ describe('main', function () {
       // Create patches
       for (let i = 0; i < _numPatches; i++) {
         _patches.push({
-          at    : Date.now(),
+          at    : hlc.from(Date.now()),
           peer  : Math.floor(Math.random() * 5)+2,
           seq   : i + 1,
           ver   : 1,
@@ -626,7 +671,7 @@ describe('main', function () {
       db = connect(); // memory db
       app = SQLiteOnSteroid(db, 1, { patchApplyDelayMs : (patchApplyDelayMs - 10)  });
       app.migrate([{ up : _testSchema, down : ''}]);
-      fakePeerSockets = {
+      const fakePeerSockets = {
         10 : { send : (message) => messageSentToPeer10.push(message) },
         2  : { send : (message) => messageSentToPeer2.push(message) }
       };
@@ -640,7 +685,7 @@ describe('main', function () {
     it('should store stats in pending_patches table', function (done) {
       app._generatePingStatMessage(true);
       const _patchRows = db.prepare('SELECT *, json(delta) as delta FROM pending_patches').all();
-      assert(Math.abs(_patchRows[0]._patchedAt - Date.now()) < 1000, '_patchedAt should be within 1 second of current time');
+      assert(Math.abs(hlc.toUnixTimestamp(_patchRows[0]._patchedAt) - Date.now()) < 1000, '_patchedAt should be within 1 second of current time');
       assert.deepStrictEqual(_patchRows, [{
         _patchedAt   : _patchRows[0]._patchedAt,
         _peerId      : 1,
@@ -661,7 +706,7 @@ describe('main', function () {
       assert.deepStrictEqual(messageSentToPeer2, [{ type : 20 /* PEER_STATS */ , at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
       // create a persistent ping messgae
       app._generatePingStatMessage(true);
-      assert(Math.abs(messageSentToPeer10[1].at - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
+      assert(Math.abs(hlc.toUnixTimestamp(messageSentToPeer10[1].at) - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
       assert.equal(messageSentToPeer10[1].seq, 1);
       // verify that the next non persistent ping stat message is sent with the same sequence id and timestamp
       setTimeout(() => {
@@ -709,19 +754,19 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
 
       const _patches = [
-        { at : 1748505463330, peer : 1 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : 1748505463330, peer : 1 , seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : 1748505463330, peer : 1 , seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : 1748505463335, peer : 10, seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : 1748505463336, peer : 10, seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : 1748505463337, peer : 10, seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : 1748505463338, peer : 2 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
-        { at : 1748505463340, peer : 2 , seq : 4 , ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
-        { at : 1748505463339, peer : 2 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
-        { at : 1748505463341, peer : 2 , seq : 10, ver : 2, tab : 'testB', delta : { id : 10, tenantId : 2, name : '10a' }},
-        { at : 1748505463342, peer : 2 , seq : 15, ver : 2, tab : 'testB', delta : { id : 15, tenantId : 2, name : '15a' }},
-        { at : 1748505463342, peer : 3 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1 , tenantId : 3, name : '30a' }},
-        { at : 1748505463342, peer : 3 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 2 , tenantId : 3, name : '30a' }},
+        { at : hlc.from(1748505463330), peer : 1 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(1748505463330), peer : 1 , seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : hlc.from(1748505463330), peer : 1 , seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : hlc.from(1748505463335), peer : 10, seq : 1 , ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(1748505463336), peer : 10, seq : 3 , ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : hlc.from(1748505463337), peer : 10, seq : 5 , ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : hlc.from(1748505463338), peer : 2 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : hlc.from(1748505463340), peer : 2 , seq : 4 , ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : hlc.from(1748505463339), peer : 2 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
+        { at : hlc.from(1748505463341), peer : 2 , seq : 10, ver : 2, tab : 'testB', delta : { id : 10, tenantId : 2, name : '10a' }},
+        { at : hlc.from(1748505463342), peer : 2 , seq : 15, ver : 2, tab : 'testB', delta : { id : 15, tenantId : 2, name : '15a' }},
+        { at : hlc.from(1748505463342), peer : 3 , seq : 1 , ver : 1, tab : 'testA', delta : { id : 1 , tenantId : 3, name : '30a' }},
+        { at : hlc.from(1748505463342), peer : 3 , seq : 2 , ver : 1, tab : 'testA', delta : { id : 2 , tenantId : 3, name : '30a' }},
       ];
 
       // Apply all patches
@@ -731,9 +776,9 @@ describe('main', function () {
 
       setTimeout(() => {
         assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats), {
-          2  : [1748505463342, 15, 1748505463339, 2],
-          3  : [1748505463342, 2 , 1748505463342, 2],
-          10 : [1748505463337, 5 , 1748505463335, 1]
+          2  : [hlc.from(1748505463342), 15, hlc.from(1748505463339), 2],
+          3  : [hlc.from(1748505463342), 2 , hlc.from(1748505463342), 2],
+          10 : [hlc.from(1748505463337), 5 , hlc.from(1748505463335), 1]
         });
         const { peerStats } = app.status();
         // Check that the last message timestamp for peer 2 is approximately now
@@ -741,11 +786,11 @@ describe('main', function () {
         // Should be within 200ms of now (allowing for test delays)
         assert.ok(Math.abs(_lastMsgTimestamp - Date.now()) < 2000, `Expected lastMsgTimestamp ~ now, got ${_lastMsgTimestamp}`);
         // Simulate fake missing patches for peer 3 to verify that _getMissingPatches fixes the stats
-        peerStats['3'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = 1748505463000;
+        peerStats['3'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = hlc.from(1748505463000);
         peerStats['3'][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID] = 0;
-        assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats)['3'], [1748505463342, 2 , 1748505463000, 0]);
+        assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats)['3'], [hlc.from(1748505463342), 2 , hlc.from(1748505463000), 0]);
         // same for peer 2
-        peerStats['2'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = 1748505463338;
+        peerStats['2'][app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP] = hlc.from(1748505463338);
         peerStats['2'][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID] = 1;
 
         // Get missing patches from beginning of time
@@ -755,11 +800,11 @@ describe('main', function () {
         assert.deepStrictEqual(
           _missingSequenceIds,
           [
-            { peerId : 2 , sequenceId : 2 , patchedAt : 1748505463339, nbMissingSequenceIds : 1},
-            { peerId : 2 , sequenceId : 4 , patchedAt : 1748505463340, nbMissingSequenceIds : 5},
-            { peerId : 2 , sequenceId : 10, patchedAt : 1748505463341, nbMissingSequenceIds : 4},
-            { peerId : 10, sequenceId : 1 , patchedAt : 1748505463335, nbMissingSequenceIds : 1},
-            { peerId : 10, sequenceId : 3 , patchedAt : 1748505463336, nbMissingSequenceIds : 1}
+            { peerId : 2 , sequenceId : 2 , patchedAt : hlc.from(1748505463339), nbMissingSequenceIds : 1},
+            { peerId : 2 , sequenceId : 4 , patchedAt : hlc.from(1748505463340), nbMissingSequenceIds : 5},
+            { peerId : 2 , sequenceId : 10, patchedAt : hlc.from(1748505463341), nbMissingSequenceIds : 4},
+            { peerId : 10, sequenceId : 1 , patchedAt : hlc.from(1748505463335), nbMissingSequenceIds : 1},
+            { peerId : 10, sequenceId : 3 , patchedAt : hlc.from(1748505463336), nbMissingSequenceIds : 1}
           ]
         );
 
@@ -777,9 +822,9 @@ describe('main', function () {
 
         // Verify that all stats are up to date
         assert.deepStrictEqual(removeLastTimestampInStats(app.status().peerStats), {
-          2  : [1748505463342, 15, 1748505463339, 2],
-          3  : [1748505463342, 2 , 1748505463342, 2],
-          10 : [1748505463337, 5 , 1748505463335, 1]
+          2  : [hlc.from(1748505463342), 15, hlc.from(1748505463339), 2],
+          3  : [hlc.from(1748505463342), 2 , hlc.from(1748505463342), 2],
+          10 : [hlc.from(1748505463337), 5 , hlc.from(1748505463335), 1]
         });
 
         done();
@@ -869,15 +914,15 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at : _constantTimestamp, peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : _constantTimestamp, peer : 3 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
-        { at : _constantTimestamp, peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : _constantTimestamp, peer : 10, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : _constantTimestamp, peer : 10, seq : 3, ver : 2, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : _constantTimestamp, peer : 10, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : _constantTimestamp, peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
-        { at : _constantTimestamp, peer : 2 , seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } }, // missing A
-        { at : _constantTimestamp, peer : 2 , seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 3, ver : 2, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } }, // missing A
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -888,12 +933,12 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 3, maxSeq : 3, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 1, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10 /* PATCH */, at : _constantTimestamp, peer : 3, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10 /* PATCH */, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 2, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 1, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : _constantTimestamp, peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', createdAt : null, deletedAt : null } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 300, maxSeq : 300, forPeer : 10 });
@@ -913,16 +958,16 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at : _constantTimestamp, peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : _constantTimestamp, peer : 3 , seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : _constantTimestamp, peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : _constantTimestamp, peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : _constantTimestamp, peer : 2 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
-        { at : _constantTimestamp, peer : 2 , seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } }, // missing B
-        { at : _constantTimestamp, peer : 2 , seq : 6, ver : 2, tab : 'testB', delta : { id : 6, tenantId : 1, name : '6a' } }, // missing B
-        { at : _constantTimestamp, peer : 3 , seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
-        { at : _constantTimestamp, peer : 10, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
-        { at : _constantTimestamp, peer : 10, seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 6, ver : 2, tab : 'testB', delta : { id : 6, tenantId : 1, name : '6a' } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -933,15 +978,15 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 5, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 2, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10, at : _constantTimestamp, peer : 2, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
-        assert.deepStrictEqual(messagesPerPeer[10][1], { type : 10, at : _constantTimestamp, peer : 2, seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 2, maxSeq : 100, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 3, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : _constantTimestamp, peer : 3, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][1], { type : 10, at : _constantTimestamp, peer : 3, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][2], { type : 10, at : _constantTimestamp, peer : 3, seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][2], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', createdAt : null, deletedAt : null } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 200, maxSeq : 200, forPeer : 10 });
