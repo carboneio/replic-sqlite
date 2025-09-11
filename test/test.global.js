@@ -90,6 +90,10 @@ describe('main', function () {
     });
 
     it('should insert rows as soon as possible and request missing patch', function (done) {
+      const _syncedPeers = [];
+      app.event.on('synced', (peerId) => {
+        _syncedPeers.push(peerId);
+      });
       const _now = Date.now();
       const _status = app.status();
       assert.deepStrictEqual(_status.lastSequenceId, 0);
@@ -99,13 +103,14 @@ describe('main', function () {
       _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 100, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1b' } });
       _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
       assert.deepStrictEqual(_status.peerStats[100].slice(0,-1), [hlc.from(_now), 5, hlc.from(_now-1), 2]);
-      // should insert rows as oon as possible
+      // should insert rows as soon as possible
       setTimeout(() => {
         assert.deepStrictEqual(messageSentToPeer100.length, 0);
         const _tableARows = db.prepare('SELECT * FROM testA').all();
         assert.strictEqual(_tableARows.length, 2);
         assert.deepStrictEqual(_tableARows[0], { id : 1, tenantId : 1, name : '1c' });
         assert.deepStrictEqual(_tableARows[1], { id : 5, tenantId : 1, name : '5a' });
+        assert.deepStrictEqual(_syncedPeers, [100, 200]);
         heartBeatSync(app);
         // Check that a message was sent to peer 100 for the missing patch (seq 3)
         assert.strictEqual(messageSentToPeer100.length, 2, 'Should have sent two messages to peer 100 for missing patch');
@@ -135,6 +140,7 @@ describe('main', function () {
 
             assert.strictEqual(messageSentToPeer100.length, 5, 'Should have sent five messages to peer 100 for missing patch');
             assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
+            assert.deepStrictEqual(_syncedPeers, [100, 200]); // event "synced" should be fired only once per peer
             done();
           }, 15);
         }, 15);

@@ -25,6 +25,7 @@ Replic-sqlite is a lightweight module for Node.js/Bun.js that brings multi-write
 - Can be embedded directly into the application
 - No leader election -> no bottleneck for writes 
 - Only tables with their correspondant `_patches` tables are replicated (see below)
+- Robust to clock drift between machines, using Hybrid Logical Clocks
 
 ## Known Limits
 
