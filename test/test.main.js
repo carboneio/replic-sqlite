@@ -1004,6 +1004,28 @@ describe('main', function () {
 
   });
 
+  describe('generatePeerId', function () {
+    let db;
+    beforeEach (function () {
+      db = connect();
+    });
+
+    afterEach (function () {
+      close(db);
+    });
+
+    it('should generate a unique peer id', function () {
+      const _peerId = SQLiteOnSteroid(db, 1, {}).generatePeerId();
+      // The peerId is constructed as: (timestamp << 13) + randomInt
+      // To verify, shift right by 13 bits to get the timestamp part (in ms since 2025-01-01)
+      const timestampPart = BigInt(_peerId) >> 13n;
+      const msSince2025 = Date.now() - 1735689600000;
+      // The timestampPart should be close to msSince2025 (allowing some delta for test execution time)
+      assert.ok(Math.abs(Number(timestampPart) - msSince2025) < 1000 * 60, 'peerId timestamp part should be close to current ms since 2025-01-01');
+      assert.strictEqual(_peerId < Number.MAX_SAFE_INTEGER, true, 'peerId should be a valid 53bits number below MAX_SAFE_INTEGER');
+    });
+  });
+
 
 });
 
