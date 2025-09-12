@@ -140,10 +140,11 @@ describe('main', function () {
 
     it('should insert rows in patches and main tables and broadcast to peers', function (done) {
       const _rowPatch = { id : 1, tenantId : 2, name : 'test', deletedAt : 3, createdAt : 4 };
-      app.upsert('testA', _rowPatch, (err) => {
+      app.upsert('testA', _rowPatch, (err, sessionToken) => {
         if (err) {
           throw err;
         }
+        assert.strictEqual(sessionToken, '1800.1');
         // Verify row in patches table
         const _patchRow = db.prepare('SELECT * FROM testA_patches').all();
         assert.ok(_patchRow.length === 1, 'Row should exist in patches table');
@@ -274,10 +275,11 @@ describe('main', function () {
 
       // Insert a new patch
       const newRowPatch = { id : 12, tenantId : 22, name : 'new_patch', deletedAt : 102, createdAt : 202 };
-      app.upsert('testA', newRowPatch, (err) => {
+      app.upsert('testA', newRowPatch, (err, sessionToken) => {
         if (err) {
           throw err;
         }
+        assert.strictEqual(sessionToken, '1800.3');
         // Verify all patches including the new one
         const allPatches = db.prepare('SELECT * FROM testA_patches ORDER BY _sequenceId').all();
         assert.strictEqual(allPatches.length, 3, 'Should now have 3 patches');
@@ -296,10 +298,11 @@ describe('main', function () {
 
         // Insert another patch to verify sequence continues
         const anotherRowPatch = { id : 13, tenantId : 23, name : 'another_patch', deletedAt : 103, createdAt : 203 };
-        app.upsert('testA', anotherRowPatch, (err2) => {
+        app.upsert('testA', anotherRowPatch, (err2, sessionToken) => {
           if (err2) {
             throw err2;
           }
+          assert.strictEqual(sessionToken, '1800.4');
           const finalPatches = db.prepare('SELECT * FROM testA_patches ORDER BY _sequenceId').all();
           assert.strictEqual(finalPatches.length, 4, 'Should now have 4 patches');
           // Verify the newest patch has sequenceId 4
@@ -337,10 +340,11 @@ describe('main', function () {
       app.migrate([{ up : _preExistingPatch1, down : ''}]); // Empty table migration since schema already exists
       // Insert a new patch - should continue from sequenceId 4
       const newRowPatch = { id : 12, tenantId : 22, name : 'new_patch', deletedAt : 102, createdAt : 202 };
-      app.upsert('testA', newRowPatch, (err) => {
+      app.upsert('testA', newRowPatch, (err, sessionToken) => {
         if (err) {
           throw err;
         }
+        assert.strictEqual(sessionToken, '1800.5');
         // Verify all patches including the new one
         const allPatches = db.prepare('SELECT * FROM testA_patches ORDER BY _sequenceId').all();
         assert.strictEqual(allPatches.length, 4, 'Should now have 4 patches in testA_patches');
@@ -1026,6 +1030,129 @@ describe('main', function () {
     });
   });
 
+  describe('_parseSessionToken', function () {
+    let db;
+    beforeEach (function () {
+      db = connect();
+    });
+
+    afterEach (function () {
+      close(db);
+    });
+
+    it('should parse the session token', function () {
+      const app = SQLiteOnSteroid(db, 1);
+      const _sessionToken = '10.100';
+      const _parsedSessionToken = app._parseSessionToken(_sessionToken);
+      assert.strictEqual(_parsedSessionToken.peerId, 10);
+      assert.strictEqual(_parsedSessionToken.sequenceId, 100);
+      assert.strictEqual(app._parseSessionToken(' 1054545454.5454545454   ').peerId, 1054545454);
+      assert.strictEqual(app._parseSessionToken(' 1054545454.5454545454   ').sequenceId, 5454545454);
+      assert.strictEqual(app._parseSessionToken(' 10  . 512   ').peerId, 10);
+      assert.strictEqual(app._parseSessionToken(' 10  . 512   ').sequenceId, 512);
+      assert.strictEqual(app._parseSessionToken('9007199254740990.9007199254740990').sequenceId, 9007199254740990);
+      assert.strictEqual(app._parseSessionToken('9007199254740990.9007199254740990').peerId, 9007199254740990);
+    });
+
+    it('should handle invalid session tokens gracefully', function () {
+      const app = SQLiteOnSteroid(db, 1);
+      // Test with various invalid session tokens
+      const invalidTokens = [
+        'invalid',
+        '10.10                                                ',
+        '10',
+        '10.',
+        '.100',
+        '10.100.extra',
+        'abc.def',
+        '10.abc',
+        'abc.100',
+        '',
+        null,
+        undefined,
+        '10.100.200.300',
+        '10.100.200',
+        '-100.65',
+        'true.false',
+        '12121545454357657565465465465465476874684768468468468468768764654646511646546874687.1'
+      ];
+      for (const invalidToken of invalidTokens) {
+        assert.strictEqual(app._parseSessionToken(invalidToken), null);
+      }
+    });
+  });
+
+  describe('_backoff', function () {
+    let db;
+    beforeEach (function () {
+      db = connect();
+    });
+    afterEach (function () {
+      close(db);
+    });
+    it('should return directly if the function returns true', function () {
+      const app = SQLiteOnSteroid(db, 1);
+      app.backoff(() => true, (success) => {
+        assert.strictEqual(success, true);
+      });
+      app.backoff(() => false, (success) => {
+        assert.strictEqual(success, false);
+      });
+    });
+
+    it('should backoff and timeout if the function does not return true', function (done) {
+      const app = SQLiteOnSteroid(db, 1);
+      let _nbCalls = [];
+      let _previousCall = Date.now();
+      const _start = Date.now();
+      app.backoff(() => {
+        const _now = Date.now();
+        _nbCalls.push(Date.now() - _previousCall);
+        _previousCall = _now;
+        return false;
+      }, (success) => {
+        assert.strictEqual(success, false);
+        // Verify the backoff timing - should start at 0 and increase exponentially with some tolerance
+        const _expectedDelays = [0, 10, 20, 40, 80, 160, 320, 640, 728];
+        for (let i = 0; i < _nbCalls.length; i++) {
+          const _actual = _nbCalls[i];
+          const _expected = _expectedDelays[i];
+          assert.ok(Math.abs(_actual - _expected) <= 20, `Call ${i}: expected ~${_expected}ms, got ${_actual}ms (tolerance: 20ms)` );
+        }
+        assert.strictEqual(_nbCalls.length, 9, 'Should have called the function 9 times');
+        assert.ok(Math.abs(Date.now() - _start - 2000) <= 20, `Should have taken ~2000ms, got ${Date.now() - _start}ms`);
+        done();
+      }, 2000, 10);
+    });
+
+    it('should backoff and return before timeout if the function returns true', function (done) {
+      const app = SQLiteOnSteroid(db, 1);
+      let _nbCalls = [];
+      let _previousCall = Date.now();
+      const _start = Date.now();
+      app.backoff(() => {
+        const _now = Date.now();
+        _nbCalls.push(Date.now() - _previousCall);
+        _previousCall = _now;
+        if (Date.now() - _start > 30) {
+          return true;
+        }
+        return false;
+      }, (success) => {
+        assert.strictEqual(success, true);
+        // Verify the backoff timing - should start at 0 and increase exponentially with some tolerance
+        const _expectedDelays = [0, 10, 20];
+        for (let i = 0; i < _nbCalls.length; i++) {
+          const _actual = _nbCalls[i];
+          const _expected = _expectedDelays[i];
+          assert.ok(Math.abs(_actual - _expected) <= 20, `Call ${i}: expected ~${_expected}ms, got ${_actual}ms (tolerance: 20ms)` );
+        }
+        assert.strictEqual(_nbCalls.length, 3, 'Should have called the function 3 times');
+        done();
+      }, 2000, 10);
+    });
+
+  });
 
 });
 
