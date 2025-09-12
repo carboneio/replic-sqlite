@@ -52,7 +52,7 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
       _eventEmitter100.send = (message) => messageSentToPeer100.push(JSON.parse(JSON.stringify(message)));
       _eventEmitter200.send = (message) => messageSentToPeer200.push(JSON.parse(JSON.stringify(message)));
-      fakePeerSockets = {
+      const fakePeerSockets = {
         100 : _eventEmitter100,
         200 : _eventEmitter200
       };

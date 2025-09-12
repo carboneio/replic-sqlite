@@ -93,31 +93,52 @@ describe('hlc', function () {
     });
   });
 
+  describe('getClockDriftMs', function () {
+    it('should return the clock drift in milliseconds', function () {
+      assert.strictEqual(hlc.getClockDriftMs(), 0);
+    });
+  });
+
   describe('receive and create hlc', function () {
+    afterEach (function () {
+      MockDate.reset();
+    });
+
     it('should receive a remote HLC', function () {
-      MockDate.set(new Date('2025-01-01')); // 1735689600000
+      MockDate.set(1735689600000); // 1735689600000
       hlc.receive(hlc.from(1735689600011, 0)); // receive a remote HLC with timestamp in the future
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 1));
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 2));
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 3));
+      assert.strictEqual(hlc.getClockDriftMs(), 11);
 
       hlc.receive(hlc.from(1735689600011, 2)); // receive a remote HLC with same timestamp but higher counter
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 6));
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 7));
+      assert.strictEqual(hlc.getClockDriftMs(), 11);
 
       hlc.receive(hlc.from(1735689600011, 0)); // receive a remote HLC with same timestamp but lower counter
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 8));
+      assert.strictEqual(hlc.getClockDriftMs(), 11);
 
       hlc.receive(hlc.from(1735689500000, 0)); // receive a remote HLC with lower timestamp
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 9));
+      assert.strictEqual(hlc.getClockDriftMs(), 11);
 
       hlc.receive(hlc.from(1735689600012, 0)); // receive a remote HLC with new timestamp (reset the local counter)
       assert.strictEqual(hlc.create(), hlc.from(1735689600012, 1));
+      assert.strictEqual(hlc.getClockDriftMs(), 12);
 
-      MockDate.set(new Date('2025-01-02')); // 1735776000000
+      MockDate.set(1735689600005); // local time advance a little bit but not enough to reset the counter
+      assert.strictEqual(hlc.create(), hlc.from(1735689600012, 2));
+      assert.strictEqual(hlc.getClockDriftMs(), 12-5);
+
+      MockDate.set(1735776000000); // greater than last remote
       // If timestamp is higher than last remote, it can return the same timestamp because it relies on sequence id order
       assert.strictEqual(hlc.create(), hlc.from(1735776000000, 0));
       assert.strictEqual(hlc.create(), hlc.from(1735776000000, 0));
+      assert.strictEqual(hlc.getClockDriftMs(), 12-5); // keep last clock drift
+
       MockDate.reset();
     });
   });
