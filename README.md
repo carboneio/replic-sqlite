@@ -18,6 +18,7 @@
 - 🕸️ **Flexible Topologies** – hub-and-spoke, mesh, hybrid.
 - 📦 **Dependency-Light** – only depends on SQLite itself.
 - 🔧 **Rolling Upgrades** – live DB migration system for upgrades/downgrades.
+- 🛸 **Alien-Compatible** – handles heterogeneous DB schemas across the cluster, making rolling upgrades transparent
 - 💤 **Crash-Safe** – survives stop/restart with automatic recovery.
 - 💪 **Self-Healing** – handles packet loss, reordering, clock drift.
 - ⚙️ **Embedded-Friendly** – drop it directly into your app.
