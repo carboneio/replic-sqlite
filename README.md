@@ -4,7 +4,6 @@
 
 `replic-sqlite` is a lightweight Node.js / Bun.js module that adds **multi-writer, Conflict-Free replication** to SQLite — without performance compromises.  
 
----
 
 ## ✨ Philosophy & Core Features  
 
@@ -26,7 +25,6 @@
 - 🎯 **Selective Replication** – only tables with `_patches` tables are synced.
 - 🌩️ **Serverless-Friendly** – automatic snapshot/backup/recovery to external object storage.
 
----
 
 ## 🚀 Why Replic-sqlite?  
 
@@ -79,21 +77,17 @@ More information coming soon.
 
 
 
----
 
 ## 📅 Roadmap  
 
 Additional documentation, examples, and usage guides are on the way. Stay tuned!  
 
----
 
 ## ❤️ Contributing  
 
 This is an early-stage project — feedback, ideas, and contributions are very welcome!  
 
----
 
 ## 📜 License  
 
 Apache-2.0
-
