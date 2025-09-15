@@ -21,10 +21,10 @@
     "eslint": "=9.35.0",
     "globals": "=16.3.0",
     "mocha": "=11.7.2",
-    "mockdate": "=3.0.5"
+    "mockdate": "=3.0.5",
+    "better-sqlite3": "=12.2.0"
   },
   "dependencies": {
-    "better-sqlite3": "=12.2.0",
     "debug": "=4.4.1"
   }
 }
