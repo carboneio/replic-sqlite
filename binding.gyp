@@ -4,7 +4,7 @@
     "type": "shared_library",
     "sources": [ "src/keep_last.c" ],
     "include_dirs": [
-      "<!@(node -p \"require('path').join(process.cwd(), 'node_modules/better-sqlite3/deps/sqlite3')\")"
+      "<!(node -p \"require('path').join(require('path').dirname(require.resolve('better-sqlite3/package.json')), 'deps', 'sqlite3')\")"
     ],
     'xcode_settings': {
       'MACOSX_DEPLOYMENT_TARGET': '10.15',
@@ -14,8 +14,7 @@
       'GCC_INLINES_ARE_PRIVATE_EXTERN': 'YES',
     },
     "defines": [],
-    'cflags': ['-std=c99 -fPIC -O3 -shared'],
-    "libraries": [ "-lsqlite3" ],
+    'cflags': ['-std=c99 -fPIC -O3'],
     'conditions': [
       ['OS == "win"', {
         'defines': ['WIN32'],
