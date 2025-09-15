@@ -38,6 +38,19 @@ describe('main', function () {
     hlc._reset();
   });
 
+  describe('startup + should generate a peerId automatically if not provided', function () {
+    it ('should generate a peer id if not provided', function () {
+      const db = connect(); // memory db
+      const app = SQLiteOnSteroid(db, null, {  });
+      assert.strictEqual(app.myPeerId > 1000000, true);
+    });
+    it ('should use the provided peer id', function () {
+      const db = connect(); // memory db
+      const app = SQLiteOnSteroid(db, 1, {  });
+      assert.strictEqual(app.myPeerId, 1);
+    });
+  });
+
   describe('startup + receives ping indicating that the node is not up to date.', function () {
     let db, app;
     const _eventEmitter100 = new EventEmitter();

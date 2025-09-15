@@ -1,6 +1,6 @@
 {
   "name": "replic-sqlite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 500 LOC only",
   "main": "lib/index.js",
   "directories": {
@@ -21,7 +21,7 @@
     "eslint": "=9.35.0",
     "globals": "=16.3.0",
     "mocha": "=11.7.2",
-    "mockdate": "^3.0.5"
+    "mockdate": "=3.0.5"
   },
   "dependencies": {
     "better-sqlite3": "=12.2.0",
