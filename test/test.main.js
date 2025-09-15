@@ -138,8 +138,8 @@ describe('main', function () {
       close(db);
     });
 
-    it('should insert rows in patches and main tables and broadcast to peers', function (done) {
-      const _rowPatch = { id : 1, tenantId : 2, name : 'test', deletedAt : 3, createdAt : 4 };
+    it('should insert rows in patches and main tables and broadcast to peers. Should remove unknown columns before sending on the bus.', function (done) {
+      const _rowPatch = { id : 1, tenantId : 2, name : 'test', deletedAt : 3, createdAt : 4, unknownColumn : 'unknownValue' };
       app.upsert('testA', _rowPatch, (err, sessionToken) => {
         if (err) {
           throw err;
@@ -169,7 +169,7 @@ describe('main', function () {
         // Verify broadcast to peers
         assert.strictEqual(broadcastedMessages.length, 3, 'Patch should be broadcasted to all 3 peers');
         broadcastedMessages.forEach(broadcastedPatch => {
-          assert.deepEqual(broadcastedPatch.delta, _rowPatch, 'Broadcasted patch should match the original rowPatch');
+          assert.deepEqual(broadcastedPatch.delta, { id : 1, tenantId : 2, name : 'test', deletedAt : 3, createdAt : 4 }, 'Broadcasted patch should match the original rowPatch');
           assert.strictEqual(broadcastedPatch.tab, 'testA', 'Broadcasted patch should have correct table name');
           assert.ok(broadcastedPatch.at > 0, 'Broadcasted patch should have a timestamp');
           assert.ok(broadcastedPatch.seq > 0, 'Broadcasted patch should have a sequence number');

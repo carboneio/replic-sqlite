@@ -4,10 +4,11 @@
 
 Replic-sqlite is a lightweight module for Node.js/Bun.js that brings multi-writer, CRDT-based replication to SQLite without performance compromises.
 
+TODO: more information will coming soon.
 
 ## Philosophy
 
-- 500 LOC, No hidden magic.
+- 800 LOC, No hidden magic.
 - Performance first: avoid costly operations whenever possible (JSON parsing, ...)
 - Multi-writer and multi-reader by default.  
 - Built on Conflict-free Replicated Data Types (CRDTs).  

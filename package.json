@@ -1,7 +1,7 @@
 {
   "name": "replic-sqlite",
   "version": "0.2.0",
-  "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 500 LOC only",
+  "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 800 LOC only",
   "main": "lib/index.js",
   "directories": {
     "lib": "lib",
