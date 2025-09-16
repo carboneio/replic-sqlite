@@ -1,6 +1,6 @@
 {
   "name": "replic-sqlite",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 800 LOC only",
   "main": "lib/index.js",
   "directories": {
@@ -8,7 +8,9 @@
     "test": "test"
   },
   "files": [
-    "build/keep_last-*"
+    "build/keep_last-*",
+    "binding.gyp",
+    "src/*"
   ],
   "scripts": {
     "test": "./node_modules/.bin/mocha test --timeout 10000 --exit",
