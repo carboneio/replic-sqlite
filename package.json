@@ -1,6 +1,6 @@
 {
   "name": "replic-sqlite",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 800 LOC only",
   "main": "lib/index.js",
   "directories": {
@@ -8,7 +8,7 @@
     "test": "test"
   },
   "files": [
-    "build/keep_last-*",
+    "dist/keep_last-*",
     "binding.gyp",
     "src/*"
   ],
