@@ -1,0 +1,115 @@
+name: Build & Publish
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} / ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - os: ubuntu-24.04
+            platform: linux
+            arch: arm64
+          # macOS
+          - os: macos-15      # Apple Silicon runner; clang can cross-compile x64 too
+            platform: darwin
+            arch: arm64
+          - os: macos-15
+            platform: darwin
+            arch: x64
+          # Windows
+          # - os: windows-2022
+          #   platform: win
+          #   arch: x64
+          # - os: windows-2022
+          #   platform: win
+          #   arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup node using cache (faster)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.17.1'
+
+      - run: npm ci --production
+
+      # ----- Linux: prepare cross toolchain for arm64 -----
+      - name: Install aarch64 cross toolchain (Linux arm64)
+        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+
+      - run: npx node-gyp rebuild --arch=${{ matrix.arch }}
+
+      # ----- Collect and normalize the output name -----
+      - name: Stage artifact (Linux/macOS)
+        if: matrix.platform != 'win'
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "darwin" ]; then ext="dylib"; else ext="so"; fi
+          cp "build/Release/keep_last.$ext" build/Release/${{ matrix.platform }}-${{ matrix.arch }}-keep_last.$ext
+
+      # ----- Upload per-target artifact -----
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: replic-sqlite-${{ matrix.platform }}-${{ matrix.arch }}
+          path: build/Release/${{ matrix.platform }}-${{ matrix.arch }}-keep_last.*
+
+  pack:
+    name: Assemble & Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      # List all files for debugging
+      - name: List all files (debug)
+        run: |
+          echo "Listing all files recursively from workspace root:"
+          find . -type f -print | sort
+
+      # Move downloaded folders under sqlite-ext/keep_last/
+#      - name: Layout compiled libraries
+#        run: ls -la
+#
+#      # Ensure the tag matches package.json version to prevent accidental publishes
+#      - name: Verify version matches tag
+#        run: |
+#          PKG_VERSION=$(node -p "require('./package.json').version")
+#          TAG=${GITHUB_REF_NAME#v}
+#          echo "package.json: $PKG_VERSION, tag: $TAG"
+#          [ "$PKG_VERSION" = "$TAG" ] || { echo "Version mismatch"; exit 1; }
+#
+#      - name: Setup Node (for publish)
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: '22.17.1'
+#          registry-url: 'https://registry.npmjs.org'
+#
+#      - name: Preview npm tarball
+#        run: npm pack --dry-run
+#
+      # - name: Publish to npm
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   run: npm publish --access public
