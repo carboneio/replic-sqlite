@@ -59,14 +59,14 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "darwin" ]; then ext="dylib"; else ext="so"; fi
-          cp "build/Release/keep_last.$ext" build/Release/${{ matrix.platform }}-${{ matrix.arch }}-keep_last.$ext
+          cp "build/Release/keep_last.$ext" build/Release/keep_last-${{ matrix.platform }}-${{ matrix.arch }}.$ext
 
       # ----- Upload per-target artifact -----
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: replic-sqlite-${{ matrix.platform }}-${{ matrix.arch }}
-          path: build/Release/${{ matrix.platform }}-${{ matrix.arch }}-keep_last.*
+          path: build/Release/keep_last-${{ matrix.platform }}-${{ matrix.arch }}.*
 
   pack:
     name: Assemble & Publish
@@ -79,7 +79,8 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: .
+          path: build/
+          merge-multiple: true
 
       # List all files for debugging
       - name: List all files (debug)
@@ -99,16 +100,16 @@ jobs:
 #          echo "package.json: $PKG_VERSION, tag: $TAG"
 #          [ "$PKG_VERSION" = "$TAG" ] || { echo "Version mismatch"; exit 1; }
 #
-#      - name: Setup Node (for publish)
-#        uses: actions/setup-node@v4
-#        with:
-#          node-version: '22.17.1'
-#          registry-url: 'https://registry.npmjs.org'
-#
-#      - name: Preview npm tarball
-#        run: npm pack --dry-run
-#
-      # - name: Publish to npm
+      - name: Setup Node (for publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.17.1'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Preview npm tarball
+        run: npm pack --dry-run
+
+     # - name: Publish to npm
       #   if: startsWith(github.ref, 'refs/tags/v')
       #   env:
       #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
