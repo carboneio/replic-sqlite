@@ -786,7 +786,7 @@ describe('main', function () {
         });
         const { peerStats } = app.status();
         // Check that the last message timestamp for peer 2 is approximately now
-        const _lastMsgTimestamp = peerStats['2'][app.LAST_MESSAGE_TIMETSAMP];
+        const _lastMsgTimestamp = peerStats['2'][app.LAST_MESSAGE_TIMESTAMP];
         // Should be within 200ms of now (allowing for test delays)
         assert.ok(Math.abs(_lastMsgTimestamp - Date.now()) < 2000, `Expected lastMsgTimestamp ~ now, got ${_lastMsgTimestamp}`);
         // Simulate fake missing patches for peer 3 to verify that _getMissingPatches fixes the stats
