@@ -21,6 +21,7 @@ describe('main', function () {
       name          TEXT,
       deletedAt     INTEGER,
       createdAt     INTEGER,
+      binary        BLOB,
       PRIMARY KEY (id, tenantId)
     ) STRICT;
     
@@ -33,7 +34,8 @@ describe('main', function () {
       tenantId      INTEGER NOT NULL,
       name          TEXT,
       deletedAt     INTEGER,
-      createdAt     INTEGER
+      createdAt     INTEGER,
+      binary        BLOB
     ) STRICT;
 
     CREATE INDEX testA_patches_at_idx ON testA_patches (_patchedAt);
@@ -43,7 +45,6 @@ describe('main', function () {
     let _prepareStatementHookCalls = [];
     function prepareStatementHook (tableName, column) {
       _prepareStatementHookCalls.push({ tableName, column });
-      return '?';
     }
     beforeEach (function () {
       db = connect(); // memory db
@@ -57,34 +58,36 @@ describe('main', function () {
       _prepareStatementHookCalls = [];
       const _sql = app._generateMergePatchesQueryPlan('testA').applyPatchesSQL;
       const expectedSql = `
-        INSERT INTO testA (id, tenantId, name, deletedAt, createdAt)
+        INSERT INTO testA (id, tenantId, name, deletedAt, createdAt, binary)
         SELECT
           id,
           tenantId,
           keep_last(name, _patchedAt, _peerId, _sequenceId),
           keep_last(deletedAt, _patchedAt, _peerId, _sequenceId),
-          keep_last(createdAt, _patchedAt, _peerId, _sequenceId)
+          keep_last(createdAt, _patchedAt, _peerId, _sequenceId),
+          keep_last(binary, _patchedAt, _peerId, _sequenceId)
         FROM testA_patches
         WHERE _patchedAt >= ?
         GROUP BY id, tenantId
         ON CONFLICT (id, tenantId) DO UPDATE SET
           name = coalesce(excluded.name, name),
           deletedAt = coalesce(excluded.deletedAt, deletedAt),
-          createdAt = coalesce(excluded.createdAt, createdAt);
+          createdAt = coalesce(excluded.createdAt, createdAt),
+          binary = coalesce(excluded.binary, binary);
         `;
       // Remove all whitespace and compare
       const normalizedSql = _sql.replace(/\s+/g, '\n');
       const normalizedExpectedSql = expectedSql.replace(/\s+/g, '\n');
       assert.strictEqual(normalizedSql, normalizedExpectedSql);
-      assert.strictEqual(_prepareStatementHookCalls.length, 5);
+      assert.strictEqual(_prepareStatementHookCalls.length, 6);
       assert.strictEqual(_prepareStatementHookCalls[0].tableName, 'testA');
       assert.strictEqual(_prepareStatementHookCalls[0].column, 'id');
     });
     it('should generate correct insert patch query plan', function () {
       const _sql = app._generateMergePatchesQueryPlan('testA').savePatchSQL;
       const expectedSql = `
-        INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name, deletedAt, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name, deletedAt, createdAt, binary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
       `;
       // Remove all whitespace and compare
       const normalizedSql = _sql.replace(/\s+/g, '\n');
@@ -94,12 +97,13 @@ describe('main', function () {
     it('should generate correct direct upsert query plan', function () {
       const _sql = app._generateMergePatchesQueryPlan('testA').directUpsertSQL;
       const expectedSql = `
-        INSERT INTO testA (id, tenantId, name, deletedAt, createdAt)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO testA (id, tenantId, name, deletedAt, createdAt, binary)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (id, tenantId) DO UPDATE SET
           name = coalesce(excluded.name, name),
           deletedAt = coalesce(excluded.deletedAt, deletedAt),
-          createdAt = coalesce(excluded.createdAt, createdAt);
+          createdAt = coalesce(excluded.createdAt, createdAt),
+          binary = coalesce(excluded.binary, binary);
       `;
       // Remove all whitespace and compare
       const normalizedSql = _sql.replace(/\s+/g, '\n');
@@ -912,21 +916,29 @@ describe('main', function () {
 
 
     it('should return the missing patch to the right peer', function (done) {
-      app = SQLiteOnSteroid(db, 1);
+      app = SQLiteOnSteroid(db, 1, {
+        prepareStatementHook : (tableName, column) => {
+          if (tableName === 'testA') {
+            if (column === 'binary') {
+              return { write : 'unhex(?)', read : 'lower(hex(binary))' };
+            }
+          }
+        }
+      });
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
       app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : hlc.from(_constantTimestamp), peer : 10, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : hlc.from(_constantTimestamp), peer : 10, seq : 3, ver : 2, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : hlc.from(_constantTimestamp), peer : 10, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } }, // missing A
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a', binary : '1a'.repeat(32) } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 3, ver : 2, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', binary : '1a'.repeat(32) } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', binary : '1a'.repeat(32) } }, // missing A
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a', binary : '1a'.repeat(32) } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -937,12 +949,12 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 3, maxSeq : 3, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 1, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10 /* PATCH */, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10 /* PATCH */, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a', binary : '1a'.repeat(32) /* binary : JSON.stringify(['3a', '3aa'])*/ } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 2, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 1, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', createdAt : null, deletedAt : null, binary : '1a'.repeat(32) } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 300, maxSeq : 300, forPeer : 10 });
@@ -956,22 +968,30 @@ describe('main', function () {
     });
 
     it('should return the all missing patches (range request) to the right peer from a given sequenceId', function (done) {
-      app = SQLiteOnSteroid(db, 1);
+      app = SQLiteOnSteroid(db, 1, {
+        prepareStatementHook : (tableName, column) => {
+          if (tableName === 'testA') {
+            if (column === 'binary') {
+              return { write : 'jsonb(?)', read : 'jsonb(binary)' };
+            }
+          }
+        }
+      });
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
       app.migrate([{ up : _testSchema, down : ''}]);
       const _constantTimestamp = Date.now();
       const _patches = [
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a' } },
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } },
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a' } },
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } }, // missing B
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } }, // missing B
-        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 6, ver : 2, tab : 'testB', delta : { id : 6, tenantId : 1, name : '6a' } }, // missing B
-        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a' } },
-        { at : hlc.from(_constantTimestamp), peer : 10, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a' } },
-        { at : hlc.from(_constantTimestamp), peer : 10, seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a' } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a', binary : JSON.stringify(['1a', '1aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', binary : JSON.stringify(['3a', '3aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', binary : JSON.stringify(['5a', '5aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1a', binary : JSON.stringify(['1a', '1aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a', binary : JSON.stringify(['3a', '3aa']) } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a', binary : JSON.stringify(['5a', '5aa']) } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 2 , seq : 6, ver : 2, tab : 'testB', delta : { id : 6, tenantId : 1, name : '6a', binary : JSON.stringify(['6a', '6aa']) } }, // missing B
+        { at : hlc.from(_constantTimestamp), peer : 3 , seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', binary : JSON.stringify(['6a', '6aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 2, ver : 1, tab : 'testA', delta : { id : 7, tenantId : 2, name : '7a', binary : JSON.stringify(['7a', '7aa']) } },
+        { at : hlc.from(_constantTimestamp), peer : 10, seq : 4, ver : 1, tab : 'testA', delta : { id : 9, tenantId : 2, name : '9a', binary : JSON.stringify(['9a', '9aa']) } },
       ];
       // Apply all patches
       for (const patch of _patches) {
@@ -982,15 +1002,15 @@ describe('main', function () {
         // Should search and find the patch in the database  (pending_patches)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 5, forPeer : 10 }); // missing B
         assert.strictEqual(messagesPerPeer[10].length, 2, 'Should have sent messages to the peer 10');
-        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' } });
-        assert.deepStrictEqual(messagesPerPeer[10][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' } });
+        assert.deepStrictEqual(messagesPerPeer[10][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 3, ver : 2, tab : 'testB', delta : { id : 3, tenantId : 1, name : '3a' , binary : JSON.stringify(['3a', '3aa']) } });
+        assert.deepStrictEqual(messagesPerPeer[10][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 2, seq : 5, ver : 2, tab : 'testB', delta : { id : 5, tenantId : 1, name : '5a' , binary : JSON.stringify(['5a', '5aa']) } });
 
         // Should search and find the patch in the database (testA)
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 3, minSeq : 2, maxSeq : 100, forPeer : 2 }); // missing A
         assert.strictEqual(messagesPerPeer[2].length, 3, 'Should have sent messages to the peer 2');
-        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', createdAt : null, deletedAt : null } });
-        assert.deepStrictEqual(messagesPerPeer[2][2], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', createdAt : null, deletedAt : null } });
+        assert.deepStrictEqual(messagesPerPeer[2][0], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 1, name : '3a', createdAt : null, deletedAt : null, binary : ['3a', '3aa'] } });
+        assert.deepStrictEqual(messagesPerPeer[2][1], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a', createdAt : null, deletedAt : null, binary : ['5a', '5aa'] } });
+        assert.deepStrictEqual(messagesPerPeer[2][2], { type : 10, at : hlc.from(_constantTimestamp), peer : 3, seq : 6, ver : 1, tab : 'testA', delta : { id : 6, tenantId : 2, name : '6a', createdAt : null, deletedAt : null, binary : ['6a', '6aa'] } });
 
         // Should not crash if the patch is not found
         app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 200, maxSeq : 200, forPeer : 10 });
