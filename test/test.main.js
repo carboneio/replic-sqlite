@@ -726,20 +726,30 @@ describe('main', function () {
     });
 
     it('should send non persistent peer stat message to all peers and it should not increment the sequence id', function (done) {
-      app._generatePingStatMessage(false);
+      MockDate.set(1759276800000); // 1759276800000
+      app._generatePingStatMessage(false); // should still send a persistent ping stat message because we have new peer connected
       const _patchRows = db.prepare('SELECT * FROM pending_patches').all();
-      assert.equal(_patchRows.length, 0);
-      assert.deepStrictEqual(messageSentToPeer10, [{ type : 20 /* PEER_STATS */, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
-      assert.deepStrictEqual(messageSentToPeer2, [{ type : 20 /* PEER_STATS */ , at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
+      assert.equal(_patchRows.length, 1);
+      assert.deepStrictEqual(messageSentToPeer10, [{ type : 10 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer2, [{ type : 10 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
+      MockDate.reset();
+      //  should send non persistent ping stat
+      app._generatePingStatMessage(false);
+      const _patchRows2 = db.prepare('SELECT * FROM pending_patches').all();
+      assert.equal(_patchRows2.length, 1);
+      assert.deepStrictEqual(messageSentToPeer10[1], { type : 20 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } });
+      assert.deepStrictEqual(messageSentToPeer2[1], { type : 20 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } });
+
       // create a persistent ping messgae
       app._generatePingStatMessage(true);
-      assert(Math.abs(hlc.toUnixTimestamp(messageSentToPeer10[1].at) - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
-      assert.equal(messageSentToPeer10[1].seq, 1);
+      assert(Math.abs(hlc.toUnixTimestamp(messageSentToPeer10[2].at) - Date.now()) < 500, 'Timestamps should be within 500ms of each other');
+      assert.equal(messageSentToPeer10[2].seq, 2);
+      assert.equal(messageSentToPeer2[2].seq, 2);
       // verify that the next non persistent ping stat message is sent with the same sequence id and timestamp
       setTimeout(() => {
         app._generatePingStatMessage(false);
-        assert.equal(messageSentToPeer10[2].seq, 1);
-        assert.equal(messageSentToPeer10[2].at, messageSentToPeer10[1].at);
+        assert.equal(messageSentToPeer10[3].seq, 2);
+        assert.equal(messageSentToPeer10[3].at, messageSentToPeer10[2].at);
         done();
       }, 100);
     });
