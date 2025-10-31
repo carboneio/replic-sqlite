@@ -127,8 +127,10 @@ describe('main', function () {
         heartBeatSync(app);
         // Check that a message was sent to peer 100 for the missing patch (seq 3)
         assert.strictEqual(messageSentToPeer100.length, 2, 'Should have sent two messages to peer 100 for missing patch');
+        const _persistentPingLastTimestamp =  messageSentToPeer100[0].delta['100'][4];
+        const _persistentPingPatchAt = messageSentToPeer100[0].at;
         assert.deepStrictEqual(simplifyStats(messageSentToPeer100), [
-          { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } },
+          { type : 10, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2, _persistentPingLastTimestamp], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1, _persistentPingLastTimestamp] } },
           { type : 30, peer : 100, minSeq : 3, maxSeq : 4, forPeer : 1 }
         ]);
 
@@ -142,7 +144,7 @@ describe('main', function () {
           assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
           assert.strictEqual(messageSentToPeer100.length, 4, 'Should have sent four messages to peer 100 for missing patch');
-          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 3], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
+          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : 20, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 3], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
           assert.deepStrictEqual(messageSentToPeer100[3], { type : 30, peer : 100, minSeq : 4, maxSeq : 4, forPeer : 1 });
 
           _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 4, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5z' } });
@@ -152,7 +154,7 @@ describe('main', function () {
             assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
             assert.strictEqual(messageSentToPeer100.length, 5, 'Should have sent five messages to peer 100 for missing patch');
-            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : 20, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
+            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : 20, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
             assert.deepStrictEqual(_syncedPeers, [100, 200]); // event "synced" should be fired only once per peer
             done();
           }, 15);
