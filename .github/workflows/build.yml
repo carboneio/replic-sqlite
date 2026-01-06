@@ -41,7 +41,7 @@ jobs:
       - name: Setup node using cache (faster)
         uses: actions/setup-node@v4
         with:
-          node-version: '22.17.1'
+          node-version: '22.21.1'
 
       - run: npm ci --production
 
@@ -94,7 +94,7 @@ jobs:
       - name: Setup Node (for publish)
         uses: actions/setup-node@v4
         with:
-          node-version: '22.17.1'
+          node-version: '22.21.1'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Preview npm tarball
