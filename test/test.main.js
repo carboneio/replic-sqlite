@@ -235,6 +235,119 @@ describe('main', function () {
   });
 
 
+  describe('amITheLeader and metrics number of connected peers', function () {
+    let db, app;
+    let fakePeerSockets;
+    let broadcastedMessages;
+    function createFakePeerSocket () {
+      return {
+        send : function (message) {
+          broadcastedMessages.push(message);
+        }
+      };
+    }
+    beforeEach (function () {
+      db = connect(); // memory db
+      broadcastedMessages = [];
+      fakePeerSockets = {
+        100 : createFakePeerSocket(),
+        101 : createFakePeerSocket(),
+        110 : createFakePeerSocket()
+      };
+      app = SQLiteOnSteroid(db, 105, { maxPeerDisconnectionToleranceMs : 200 });
+      app.migrate([{ up : _testSchema, down : ''}]);
+    });
+
+    afterEach (function () {
+      close(db);
+    });
+
+    function extractNbConnectedPeersFromMetrics (metricsText) {
+      const match = metricsText.match(/db_replication_connected_peers\{peer="105"\}\s+(\d+)/);
+      assert.ok(match, 'Should match open metrics line for connected peers');
+      return Number(match[1]);
+    }
+
+    it('should detect the leader', function (done) {
+      assert.strictEqual(app.amITheLeader(), true);
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(101);
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(110);
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
+      app.closeRemotePeer(100);
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
+      assert.strictEqual(app.amITheLeader(), false);
+      // should be the leader after 500ms (disconnection tolerance)
+      setTimeout(() => {
+        assert.strictEqual(app.amITheLeader(), true);
+        assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
+        done();
+      }, 500);
+    });
+
+    it('should detect the leader even if addRemotePeer is called multiple times for the same peer', function (done) {
+      assert.strictEqual(app.amITheLeader(), true);
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
+      app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(101);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(110);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      app.closeRemotePeer(100);
+      assert.strictEqual(app.amITheLeader(), false);
+      // should be the leader after 500ms (disconnection tolerance)
+      setTimeout(() => {
+        assert.strictEqual(app.amITheLeader(), true);
+        done();
+      }, 500);
+    });
+
+    it('should detect the leader even if closeRemotePeer is called multiple times for the same peer', function (done) {
+      assert.strictEqual(app.amITheLeader(), true);
+      app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
+      app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
+      app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(101);
+      app.closeRemotePeer(101);
+      app.closeRemotePeer(101);
+      app.closeRemotePeer(101);
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
+      assert.strictEqual(app.amITheLeader(), false);
+      app.closeRemotePeer(100);
+      app.closeRemotePeer(100);
+      app.closeRemotePeer(100);
+      assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
+      assert.strictEqual(app.amITheLeader(), false);
+      // should be the leader after 500ms (disconnection tolerance)
+      setTimeout(() => {
+        assert.strictEqual(app.amITheLeader(), true);
+        done();
+      }, 500);
+    });
+
+
+  });
+
 
   describe('upsert (With Existing Patches)', function () {
     let db, app;
