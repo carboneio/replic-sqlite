@@ -254,7 +254,7 @@ describe('main', function () {
         101 : createFakePeerSocket(),
         110 : createFakePeerSocket()
       };
-      app = SQLiteOnSteroid(db, 105, { maxPeerDisconnectionToleranceMs : 200 });
+      app = SQLiteOnSteroid(db, 105, { maxPeerDisconnectionToleranceMs : 200, databaseBackupCron : '1 0 * * *' });
       app.migrate([{ up : _testSchema, down : ''}]);
     });
 
@@ -268,13 +268,15 @@ describe('main', function () {
       return Number(match[1]);
     }
 
-    it('should detect the leader', function (done) {
+    it('should detect the leader (and start backup cron or not)', function (done) {
       assert.strictEqual(app.amITheLeader(), true);
+      assert.strictEqual(app.backupTask.stateMachine.state, 'idle');
       app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
       app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
       app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
       assert.strictEqual(app.amITheLeader(), false);
+      assert.strictEqual(app.backupTask.stateMachine.state, 'stopped');
       app.closeRemotePeer(101);
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
       assert.strictEqual(app.amITheLeader(), false);
@@ -289,6 +291,7 @@ describe('main', function () {
       // should be the leader after 500ms (disconnection tolerance)
       setTimeout(() => {
         assert.strictEqual(app.amITheLeader(), true);
+        assert.strictEqual(app.backupTask.stateMachine.state, 'idle');
         assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
         done();
       }, 500);
@@ -830,7 +833,7 @@ describe('main', function () {
         _patchedAt   : _patchRows[0]._patchedAt,
         _peerId      : 1,
         _sequenceId  : 1,
-        delta        : JSON.stringify({ 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] }),
+        delta        : JSON.stringify({ 2 : [0, 0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0, 0] }),
         patchVersion : 1,
         tableName    : '_'
       }]);
@@ -843,15 +846,15 @@ describe('main', function () {
       app._generatePingStatMessage(false); // should still send a persistent ping stat message because we have new peer connected
       const _patchRows = db.prepare('SELECT * FROM pending_patches').all();
       assert.equal(_patchRows.length, 1);
-      assert.deepStrictEqual(messageSentToPeer10, [{ type : 10 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
-      assert.deepStrictEqual(messageSentToPeer2, [{ type : 10 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer10, [{ type : 10 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0, 0] } }]);
+      assert.deepStrictEqual(messageSentToPeer2, [{ type : 10 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0, 0] } }]);
       MockDate.reset();
       //  should send non persistent ping stat
       app._generatePingStatMessage(false);
       const _patchRows2 = db.prepare('SELECT * FROM pending_patches').all();
       assert.equal(_patchRows2.length, 1);
-      assert.deepStrictEqual(messageSentToPeer10[1], { type : 20 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } });
-      assert.deepStrictEqual(messageSentToPeer2[1], { type : 20 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0] } });
+      assert.deepStrictEqual(messageSentToPeer10[1], { type : 20 /* PEER_STATS */, at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0, 0] } });
+      assert.deepStrictEqual(messageSentToPeer2[1], { type : 20 /* PEER_STATS */ , at : 193226342400000, peer : 1, seq : 1, ver : 1, tab : '_', delta : { 2 : [0, 0, 0, 0, 0, 0], 10 : [0, 0, 0, 0, 0, 0] } });
 
       // create a persistent ping messgae
       app._generatePingStatMessage(true);
@@ -1261,6 +1264,114 @@ describe('main', function () {
       // The timestampPart should be close to msSince2025 (allowing some delta for test execution time)
       assert.ok(Math.abs(Number(timestampPart) - msSince2025) < 1000 * 60, 'peerId timestamp part should be close to current ms since 2025-01-01');
       assert.strictEqual(_peerId < Number.MAX_SAFE_INTEGER, true, 'peerId should be a valid 53bits number below MAX_SAFE_INTEGER');
+    });
+  });
+
+  describe('backupDatabase', function () {
+    let db;
+    const _testDir = path.join(process.cwd(), 'test-backup');
+    beforeEach (function () {
+      db = connect();
+      fs.mkdirSync(_testDir, { recursive : true });
+    });
+
+    afterEach (function () {
+      close(db);
+      fs.rmSync(_testDir, { recursive : true });
+    });
+
+    function extractLastSuccessfulBackupTimestampFromMetrics (metricsText) {
+      const match = metricsText.match(/_last_successful_backup_timestamp\{peer="1"\}\s+(\d+)/);
+      assert.ok(match, 'Should match open metrics line for connected peers');
+      return Number(match[1]);
+    }
+    it('should backup the database', function (done) {
+      // define a custom function to observe the provided backup file path and ensure it's called
+      let _capturedFileName;
+      function databaseBackupAbsolutePathFn(trigger, cb) {
+        const _date = new Date().toISOString().slice(0, 19).replace(/:/g, '-') + 'Z';
+        _capturedFileName = path.join(_testDir, `${trigger}-${_date}.sqlite`);
+        cb(_capturedFileName);
+      }
+      const _app = SQLiteOnSteroid(db, 1, { databaseBackupAbsolutePathFn });
+      _app.backupDatabase('scheduled', function (err, trigger, backupFileName) {
+        try {
+          if (err) {
+            throw err;
+          }
+          assert.strictEqual(backupFileName, _capturedFileName, 'backupFileName is set by databaseBackupAbsolutePathFn');
+          assert.ok(fs.existsSync(backupFileName), 'Backup file should exist on disk');
+          const _metrics = _app.metrics();
+          const _lastSuccessfulBackupTimestamp = extractLastSuccessfulBackupTimestampFromMetrics(_metrics);
+          assert.ok(_lastSuccessfulBackupTimestamp > 0, 'Last successful backup timestamp should be set');
+          assert.ok(_lastSuccessfulBackupTimestamp <= Date.now(), 'Last successful backup timestamp should be recent');
+          done();
+        }
+        catch (e) {
+          done(new Error(`Error during backup: ${e.message}`));
+        }
+      });
+    });
+    it('should not create a backup if the function does not return a path for backup', function (done) {
+      function databaseBackupAbsolutePathFn(trigger, cb) {
+        cb(null);
+      }
+      const _app = SQLiteOnSteroid(db, 1, { databaseBackupAbsolutePathFn });
+      _app.backupDatabase('scheduled', function (err, trigger, backupFileName) {
+        try {
+          assert.strictEqual(err.message, 'No backup file name for scheduled trigger');
+          assert.strictEqual(fs.existsSync(_testDir), true, 'Backup directory should exist');
+          assert.deepStrictEqual(fs.readdirSync(_testDir), [], 'Backup directory should be empty');
+          done();
+        }
+        catch (e) {
+          done(new Error(`Error during backup: ${e.message}`));
+        }
+      });
+    });
+    it('should call event backup:completed, and backup:progress if the callback is not provided', function (done) {
+      let gotCompleted = false;
+      let gotProgress = false;
+      // Use a real absolute path fn
+      function databaseBackupAbsolutePathFn(trigger, cb) {
+        const _date = new Date().toISOString().slice(0, 19).replace(/:/g, '-') + 'Z';
+        cb(path.join(_testDir, `${trigger}-${_date}.sqlite`));
+      }
+      const _app = SQLiteOnSteroid(db, 1, { databaseBackupAbsolutePathFn });
+      // Insert about 2000Kb of data to slow down the backup enough so that sqlite3 will report progress at least once.
+      // We'll create a table and put a big blob in it.
+      // Make a new table for backup blob insert test
+      db.exec('CREATE TABLE IF NOT EXISTS big_blob (id INTEGER PRIMARY KEY, data BLOB)');
+      // Make a ~200KB Buffer
+      const bigBuf = Buffer.alloc(200 * 1024, 42);
+      // Insert a few rows (total data is larger, backup will take at least a moment)
+      const stmt = db.prepare('INSERT INTO big_blob (data) VALUES (?)');
+      // Insert several times to increase DB size and work for backup
+      for (let i = 0; i < 100; ++i) {
+        stmt.run(bigBuf);
+      }
+      // Listen for backup events
+      _app.event.once('backup:completed', function (trigger, backupFileName) {
+        gotCompleted = true;
+        assert.strictEqual(trigger, 'scheduled');
+        assert.ok(fs.existsSync(backupFileName), 'Backup file should exist on disk');
+        finishTestIfReady();
+      });
+      _app.event.once('backup:progress', function (trigger, backupFileName, progress) {
+        gotProgress = true;
+        assert.strictEqual(trigger, 'scheduled');
+        assert.strictEqual(progress, '0.0');
+        // We do not assert on progress value, just that it is called
+        finishTestIfReady();
+      });
+      // No callback to backupDatabase, so events must fire
+      _app.backupDatabase('scheduled');
+      // Helper to call done when both events are received
+      function finishTestIfReady() {
+        if (gotCompleted && gotProgress) {
+          done();
+        }
+      }
     });
   });
 
