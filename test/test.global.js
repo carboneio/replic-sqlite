@@ -180,7 +180,7 @@ describe('main', function () {
   });
 
 
-  describe('process existing patches', function () {
+  describe('process with existing patches at startup', function () {
     let db, app;
     const existingPatchTimestamp = Date.now() - 1000; // 1 second ago
     const _eventEmitter100 = new EventEmitter();

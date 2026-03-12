@@ -22,11 +22,11 @@
   "author": "David Grelaud",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@eslint/eslintrc": "=3.3.3",
-    "@eslint/js": "=9.39.2",
-    "eslint": "=9.39.2",
-    "globals": "=17.3.0",
-    "mocha": "=11.7.5",
+    "@eslint/eslintrc": "=3.3.5",
+    "@eslint/js": "=10.0.1",
+    "eslint": "=10.0.3",
+    "globals": "=17.4.0",
+    "mocha": "=12.0.0-beta-10",
     "mockdate": "=3.0.5"
   },
   "dependencies": {

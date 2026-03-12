@@ -119,7 +119,7 @@ A patch contains:
 - a patch timestamp based on a hybrid logical clock (HLC)
 - the `peerId` of the node that created the patch
 
-```json
+```js
   {
     type  : MESSAGE_TYPES.PATCH,
     at    : Date.now(),          // HLC timestamp 
@@ -143,12 +143,12 @@ The sequence number is strictly contiguous for each peer. If there is a gap in t
 
 This is the message that is SENT to the other node to send missing patches:
 
-```json
+```js
   {
     type    : MESSAGE_TYPES.MISSING_PATCH,
     peer    : myPeerId,              // peer
-    minSeq  : missingSequence,       // min sequence of peer to get
-    maxSeq  : missingSequence,       // last sequence to send (included)
+    minSeq  : missingSequence,       // min sequence of peer to get (inclusive)
+    maxSeq  : missingSequence,       // last sequence to send (inclusive)
     forPeer : peerNb                 // where the patch is missing
   }
 ```
