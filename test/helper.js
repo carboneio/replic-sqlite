@@ -3,8 +3,8 @@
 function removeLastTimestampInStats (stat) {
   const _newStat = {};
   for (const key in stat) {
-    if (stat[key].length === 5) {
-      _newStat[key] = stat[key].slice(0, -1);
+    if (stat[key].length === 6) {
+      _newStat[key] = stat[key].slice(0, -2);
     }
   }
   return _newStat;
