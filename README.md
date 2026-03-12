@@ -1,6 +1,21 @@
+<p align="center">
+  <a href="https://www.npmjs.com/package/replic-sqlite">
+    <img src="https://badgen.net/npm/dt/replic-sqlite" alt="npm badge">
+  </a>
+  <a href="https://www.npmjs.com/package/replic-sqlite">
+    <img src="https://badgen.net/npm/dm/replic-sqlite" alt="npm badge">
+  </a>
+  <a href="https://www.npmjs.com/package/replic-sqlite">
+    <img src="https://badgen.net/npm/v/replic-sqlite" alt="replic-sqlite version badge">
+  </a><br/>
+  <a href="https://bundlephobia.com/result?p=replic-sqlite">
+    <img src="https://badgen.net/bundlephobia/minzip/replic-sqlite" alt="minizip badge">
+  </a>
+</p>
+
 # Replic-sqlite  
 
-> **⚠️ WIP Notice:** This project is still under active development. **Do NOT use in production yet.**
+> **ℹ️ Project Status:** This project is actively developed and evolving. While still in progress, it is already used in production environments.
 
 `replic-sqlite` is a lightweight Node.js / Bun.js module that adds **multi-writer, Conflict-Free replication** to SQLite — without performance compromises.  
 
