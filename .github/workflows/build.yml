@@ -75,6 +75,11 @@ jobs:
     name: Assemble & Publish
     needs: build
     runs-on: ubuntu-latest
+    # New publication workflow with OIDC authentication https://docs.npmjs.com/trusted-publishers
+    # THe Github CI is declared on NPM as a trusted publisher
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,7 +99,7 @@ jobs:
       - name: Setup Node (for publish)
         uses: actions/setup-node@v4
         with:
-          node-version: '22.21.1'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Preview npm tarball
@@ -102,6 +107,4 @@ jobs:
 
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
         run: npm publish
