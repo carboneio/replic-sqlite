@@ -1,9 +1,6 @@
 const assert = require('assert');
 const SQLiteOnSteroid = require('../lib/index.js');
-const path = require('path');
-const fs = require('fs');
 const Database  = require('better-sqlite3');
-const debug = require('debug');
 
 describe('migrate', function () {
   let db, app;

@@ -4,8 +4,7 @@ const hlc = require('../lib/hlc.js');
 const path = require('path');
 const fs = require('fs');
 const Database  = require('better-sqlite3');
-const debug = require('debug');
-const { simplifyStats, removeLastTimestampInStats } = require('./helper.js');
+const { removeLastTimestampInStats } = require('./helper.js');
 const MockDate = require('mockdate');
 
 describe('main', function () {
@@ -657,15 +656,15 @@ describe('main', function () {
         app._onPatchReceivedFromPeers(_rowPatch1);
       }
       catch (e) {
-        assert.fail('app._onPatchReceivedFromPeers should not throw an error');
+        assert.fail(e);
       }
       try {
-        app.upsert('testA', { id : 1, tenantId : ['Bad data'], name : '2d' }, (err) => {
+        app.upsert('testA', { id : 1, tenantId : ['Bad data'], name : '2d' }, () => {
           done();
         });
       }
       catch (e) {
-        assert.fail('app.upsert should not throw an error');
+        assert.fail(e);
       }
     });
 
@@ -716,14 +715,14 @@ describe('main', function () {
         _patchedAt   : hlc.from(_constantTimestamp),
         _peerId      : 20,
         _sequenceId  : 1,
-        delta        : '{\"20\":[0,0]}',
+        delta        : '{"20":[0,0]}',
         patchVersion : 1,
         tableName    : '_'
       }, {
         _patchedAt   : hlc.from(_constantTimestamp),
         _peerId      : 10,
         _sequenceId  : 20,
-        delta        : '{\"20\":[1,1]}',
+        delta        : '{"20":[1,1]}',
         patchVersion : 2,
         tableName    : '_'
       }]);
@@ -1088,7 +1087,7 @@ describe('main', function () {
           app._onRequestForMissingPatchFromPeers({ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 2, forPeer : 2 }); // missing A
         }
         catch (e) {
-          assert.fail('app._onRequestForMissingPatchFromPeers should not throw an error');
+          assert.fail(e);
         }
         done();
       }, patchApplyDelayMs);
@@ -1288,7 +1287,7 @@ describe('main', function () {
     it('should backup the database', function (done) {
       // define a custom function to observe the provided backup file path and ensure it's called
       let _capturedFileName;
-      function databaseBackupAbsolutePathFn(trigger, cb) {
+      function databaseBackupAbsolutePathFn (trigger, cb) {
         const _date = new Date().toISOString().slice(0, 19).replace(/:/g, '-') + 'Z';
         _capturedFileName = path.join(_testDir, `${trigger}-${_date}.sqlite`);
         cb(_capturedFileName);
@@ -1313,11 +1312,11 @@ describe('main', function () {
       });
     });
     it('should not create a backup if the function does not return a path for backup', function (done) {
-      function databaseBackupAbsolutePathFn(trigger, cb) {
+      function databaseBackupAbsolutePathFn (trigger, cb) {
         cb(null);
       }
       const _app = SQLiteOnSteroid(db, 1, { databaseBackupAbsolutePathFn });
-      _app.backupDatabase('scheduled', function (err, trigger, backupFileName) {
+      _app.backupDatabase('scheduled', function (err) {
         try {
           assert.strictEqual(err.message, 'No backup file name for scheduled trigger');
           assert.strictEqual(fs.existsSync(_testDir), true, 'Backup directory should exist');
@@ -1333,7 +1332,7 @@ describe('main', function () {
       let gotCompleted = false;
       let gotProgress = false;
       // Use a real absolute path fn
-      function databaseBackupAbsolutePathFn(trigger, cb) {
+      function databaseBackupAbsolutePathFn (trigger, cb) {
         const _date = new Date().toISOString().slice(0, 19).replace(/:/g, '-') + 'Z';
         cb(path.join(_testDir, `${trigger}-${_date}.sqlite`));
       }
@@ -1367,7 +1366,7 @@ describe('main', function () {
       // No callback to backupDatabase, so events must fire
       _app.backupDatabase('scheduled');
       // Helper to call done when both events are received
-      function finishTestIfReady() {
+      function finishTestIfReady () {
         if (gotCompleted && gotProgress) {
           done();
         }
