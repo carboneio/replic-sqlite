@@ -55,6 +55,12 @@ A better alternative to libSQL, Turso, Bedrockdb, cr-sqlite, dqlite, rqlite, and
 - They only work when the schema is exactly the same on all nodes, which is not true during a rolling update.
 - Like statement replication (see above), they require a synchronization mechanism to ensure that patches are applied in the same order.
 
+**What are the main differences with libSQL?**
+
+- libSQL runs in a separate process, communicating via sockets. While this architecture is possible with replic-sqlite, it’s entirely up to you. replic-sqlite is intended to embed directly into your app if you wish.
+- All writes in libSQL are sent to a main server instance to guarantee consistency. This centralization can become a network bottleneck.
+- Replicas must be manually or periodically updated in libSQL, rather than having real-time or automatically coordinated sync.
+
 **Why are patches stored in per-table duplicate tables instead of a global `log` table?**
 
 - **1. Better read/write performance**  
