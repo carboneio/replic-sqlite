@@ -8,9 +8,6 @@
   <a href="https://www.npmjs.com/package/replic-sqlite">
     <img src="https://badgen.net/npm/v/replic-sqlite" alt="replic-sqlite version badge">
   </a><br/>
-  <a href="https://bundlephobia.com/result?p=replic-sqlite">
-    <img src="https://badgen.net/bundlephobia/minzip/replic-sqlite" alt="minizip badge">
-  </a>
 </p>
 
 # Replic-sqlite  
