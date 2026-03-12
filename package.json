@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 800 LOC only",
   "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:carboneio/replic-sqlite.git"
+  },
   "directories": {
     "lib": "lib",
     "test": "test"
