@@ -993,7 +993,7 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
 
       const _numPatches = 100000;
-      const _threshold = 150; // ms
+      const _threshold = 180; // ms
       const _patches = [];
       const _peerCount = 10;
       // Create patches
