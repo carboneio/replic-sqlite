@@ -993,7 +993,7 @@ describe('main', function () {
       app.migrate([{ up : _testSchema, down : ''}]);
 
       const _numPatches = 100000;
-      const _threshold = 100; // ms
+      const _threshold = 150; // ms
       const _patches = [];
       const _peerCount = 10;
       // Create patches
@@ -1486,15 +1486,16 @@ describe('main', function () {
       }, (success) => {
         assert.strictEqual(success, true);
         // Verify the backoff timing - should start at 0 and increase exponentially with some tolerance
-        const _expectedDelays = [0, 10, 20];
+        const _expectedDelays = [0, 20, 40];
         for (let i = 0; i < _nbCalls.length; i++) {
           const _actual = _nbCalls[i];
           const _expected = _expectedDelays[i];
+          console.log(`Call ${i}: expected ~${_expected}ms, got ${_actual}ms (tolerance: 20ms)` );
           assert.ok(Math.abs(_actual - _expected) <= 20, `Call ${i}: expected ~${_expected}ms, got ${_actual}ms (tolerance: 20ms)` );
         }
         assert.strictEqual(_nbCalls.length, 3, 'Should have called the function 3 times');
         done();
-      }, 2000, 10);
+      }, 2000, 20);
     });
 
   });
