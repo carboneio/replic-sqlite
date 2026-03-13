@@ -1,4 +1,8 @@
 
+## v0.3.1
+
+- Fix cron execution by replacing `node-cron` with `croner`.
+
 ## v0.3.0
 
 - Fixed the connected-peers metric so it now reports the real-time value.

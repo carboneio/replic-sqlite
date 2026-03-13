@@ -269,13 +269,14 @@ describe('main', function () {
 
     it('should detect the leader (and start backup cron or not)', function (done) {
       assert.strictEqual(app.amITheLeader(), true);
-      assert.strictEqual(app.backupTask.stateMachine.state, 'idle');
+      assert.strictEqual(app.backupTask.isRunning(), true);
       app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
       app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
       app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
       assert.strictEqual(app.amITheLeader(), false);
-      assert.strictEqual(app.backupTask.stateMachine.state, 'stopped');
+      assert.strictEqual(app.backupTask.isRunning(), false);
+      assert.strictEqual(app.backupTask.isStopped(), false);
       app.closeRemotePeer(101);
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
       assert.strictEqual(app.amITheLeader(), false);
@@ -290,7 +291,7 @@ describe('main', function () {
       // should be the leader after 500ms (disconnection tolerance)
       setTimeout(() => {
         assert.strictEqual(app.amITheLeader(), true);
-        assert.strictEqual(app.backupTask.stateMachine.state, 'idle');
+        assert.strictEqual(app.backupTask.isRunning(), true);
         assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
         done();
       }, 500);
@@ -1364,7 +1365,7 @@ describe('main', function () {
         finishTestIfReady();
       });
       // No callback to backupDatabase, so events must fire
-      _app.backupDatabase('scheduled');
+      _app.backupDatabase({}); // send the cron object as first argument to verify that the trigger is set to 'scheduled'
       // Helper to call done when both events are received
       function finishTestIfReady () {
         if (gotCompleted && gotProgress) {
