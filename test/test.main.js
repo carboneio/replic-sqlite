@@ -267,11 +267,11 @@ describe('main', function () {
       return Number(match[1]);
     }
 
-    it('should detect the leader (and start backup cron or not)', function (done) {
+    it('should detect the leader (and start backup cron or not). Shuold accept peer id as a string', function (done) {
       assert.strictEqual(app.amITheLeader(), true);
       assert.strictEqual(app.backupTask.isRunning(), true);
       app.addRemotePeer(100, fakePeerSockets[100], { ip : '127.0.0.1', port : 10000 });
-      app.addRemotePeer(101, fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
+      app.addRemotePeer('101', fakePeerSockets[101], { ip : '127.0.0.1', port : 10001 });
       app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 3);
       assert.strictEqual(app.amITheLeader(), false);
@@ -280,7 +280,7 @@ describe('main', function () {
       app.closeRemotePeer(101);
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 2);
       assert.strictEqual(app.amITheLeader(), false);
-      app.closeRemotePeer(110);
+      app.closeRemotePeer('110');
       assert.strictEqual(extractNbConnectedPeersFromMetrics( app.metrics()), 1);
       assert.strictEqual(app.amITheLeader(), false);
       app.addRemotePeer(110, fakePeerSockets[110], { ip : '127.0.0.1', port : 10002 });
@@ -1312,14 +1312,14 @@ describe('main', function () {
         }
       });
     });
-    it('should not create a backup if the function does not return a path for backup', function (done) {
+    it('should not create a backup if the function does not return a path for backup and it should return an error', function (done) {
       function databaseBackupAbsolutePathFn (trigger, cb) {
         cb(null);
       }
       const _app = SQLiteOnSteroid(db, 1, { databaseBackupAbsolutePathFn });
       _app.backupDatabase('scheduled', function (err) {
         try {
-          assert.strictEqual(err.message, 'No backup file name for scheduled trigger');
+          assert.strictEqual(err, null);
           assert.strictEqual(fs.existsSync(_testDir), true, 'Backup directory should exist');
           assert.deepStrictEqual(fs.readdirSync(_testDir), [], 'Backup directory should be empty');
           done();

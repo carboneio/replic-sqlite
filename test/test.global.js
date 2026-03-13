@@ -67,7 +67,7 @@ describe('main', function () {
         200 : _eventEmitter200
       };
       app.addRemotePeer(100, fakePeerSockets[100]);
-      app.addRemotePeer(200, fakePeerSockets[200]);
+      app.addRemotePeer('200', fakePeerSockets[200]);
     });
     afterEach (function (done) {
       setTimeout(() => {

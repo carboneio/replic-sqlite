@@ -1,4 +1,9 @@
 
+## v0.3.2
+
+- Automatically force `peerId` to be a number when calling `addRemotePeer(peerId)` and `closeRemotePeer(peerId)` to fix startup synchronization detection.
+- Do not return an error when calling the `databaseBackupAbsolutePathFn` callback if no backup filename is provided.
+
 ## v0.3.1
 
 - Fix cron execution by replacing `node-cron` with `croner`.
