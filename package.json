@@ -1,6 +1,6 @@
 {
   "name": "replic-sqlite",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Simple, Fast, Multi-writer, Convergent, Replicated SQLite with 800 LOC only",
   "main": "lib/index.js",
   "repository": {
@@ -34,7 +34,7 @@
     "mockdate": "=3.0.5"
   },
   "dependencies": {
-    "better-sqlite3": "=12.6.2",
+    "better-sqlite3": "=12.9.0",
     "croner": "=10.0.1",
     "debug": "=4.4.3"
   }

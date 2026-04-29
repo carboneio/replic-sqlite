@@ -1,4 +1,9 @@
 
+## v0.4.0
+
+- Upgrade `better-sqlite3`
+- Add prebuilds for Node.js 24
+
 ## v0.3.2
 
 - Automatically force `peerId` to be a number when calling `addRemotePeer(peerId)` and `closeRemotePeer(peerId)` to fix startup synchronization detection.
