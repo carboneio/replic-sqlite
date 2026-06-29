@@ -109,4 +109,15 @@ jobs:
 
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
-        run: npm publish
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          LATEST_VERSION=$(npm view replic-sqlite version 2>/dev/null || echo "")
+          if [ -n "$LATEST_VERSION" ] \
+            && [ "$(printf '%s\n' "$LATEST_VERSION" "$PACKAGE_VERSION" | sort -V | head -n1)" = "$PACKAGE_VERSION" ] \
+            && [ "$PACKAGE_VERSION" != "$LATEST_VERSION" ]; then
+            TAG="v$(echo "$PACKAGE_VERSION" | cut -d. -f1,2)"
+            echo "Publishing $PACKAGE_VERSION with tag $TAG (npm latest is $LATEST_VERSION)"
+            npm publish --tag "$TAG"
+          else
+            npm publish
+          fi
