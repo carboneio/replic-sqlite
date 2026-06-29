@@ -1,4 +1,9 @@
 
+## v0.3.3
+
+- Forward binary WebSocket messages to `onUnknownMessage(msg, true)` instead of trying to parse them as replication messages.
+- `onUnknownMessage` now receives a second argument, `isBinary`: `true` for binary socket payloads, `false` for parsed messages with an unknown `type`.
+
 ## v0.3.2
 
 - Automatically force `peerId` to be a number when calling `addRemotePeer(peerId)` and `closeRemotePeer(peerId)` to fix startup synchronization detection.
