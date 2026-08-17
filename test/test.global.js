@@ -309,6 +309,48 @@ describe('main', function () {
     });
   });
 
+  describe('onUnknownMessage', function () {
+    let db, app;
+    let _eventEmitter100;
+    let onUnknownMessageCalls = [];
+
+    beforeEach (function () {
+      onUnknownMessageCalls = [];
+      _eventEmitter100 = new EventEmitter();
+      db = connect();
+      app = SQLiteOnSteroid(db, 1, {
+        onUnknownMessage : (msg, isBinary) => {
+          onUnknownMessageCalls.push({ msg, isBinary });
+        }
+      });
+      app.migrate([{ up : _testSchema, down : ''}]);
+      app.addRemotePeer(100, _eventEmitter100);
+    });
+
+    afterEach (function (done) {
+      setTimeout(() => {
+        close(db);
+        done();
+      }, 20);
+    });
+
+    it('should call onUnknownMessage with isBinary true for binary socket messages', function () {
+      const _binaryMsg = Buffer.from('hello');
+      _eventEmitter100.emit('message', _binaryMsg, true);
+      assert.strictEqual(onUnknownMessageCalls.length, 1);
+      assert.strictEqual(onUnknownMessageCalls[0].msg, _binaryMsg);
+      assert.strictEqual(onUnknownMessageCalls[0].isBinary, true);
+    });
+
+    it('should call onUnknownMessage with isBinary false for unknown message types', function () {
+      const _unknownMsg = { type : 99, foo : 'bar' };
+      _eventEmitter100.emit('message', _unknownMsg);
+      assert.strictEqual(onUnknownMessageCalls.length, 1);
+      assert.deepStrictEqual(onUnknownMessageCalls[0].msg, _unknownMsg);
+      assert.strictEqual(onUnknownMessageCalls[0].isBinary, false);
+    });
+  });
+
 });
 
 
