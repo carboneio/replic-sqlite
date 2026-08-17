@@ -26,10 +26,10 @@ jobs:
             platform: linux
             arch: arm64
           # macOS
-          - os: macos-15      # Apple Silicon runner; clang can cross-compile x64 too
+          - os: macos-26      # Apple Silicon runner; clang can cross-compile x64 too
             platform: darwin
             arch: arm64
-          - os: macos-15
+          - os: macos-26
             platform: darwin
             arch: x64
           # Windows
@@ -43,9 +43,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup node using cache (faster)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -98,7 +98,7 @@ jobs:
           find . -type f -print | sort
 
       - name: Setup Node (for publish)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # Required for OIDC authentication
           node-version: '24'

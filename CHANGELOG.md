@@ -1,4 +1,8 @@
 
+## v0.4.1
+
+- Upgrade `better-sqlite3` and all dev deps
+
 ## v0.4.0
 
 - Upgrade `better-sqlite3`
