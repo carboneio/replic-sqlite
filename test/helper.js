@@ -3,8 +3,11 @@
 function removeLastTimestampInStats (stat) {
   const _newStat = {};
   for (const key in stat) {
-    if (stat[key].length === 6) {
+    if (Array.isArray(stat[key]) && stat[key].length === 6) {
       _newStat[key] = stat[key].slice(0, -2);
+    }
+    else {
+      _newStat[key] = stat[key];
     }
   }
   return _newStat;
@@ -12,7 +15,7 @@ function removeLastTimestampInStats (stat) {
 
 function simplifyStats (patches) {
   for (const patch of patches) {
-    if (patch.type === 20 /* PING */ && patch.delta) {
+    if ((patch.type === 10 /* PATCH */ || patch.type === 20 /* PING */) && patch.delta) {
       patch.delta = removeLastTimestampInStats(patch.delta);
     }
   }

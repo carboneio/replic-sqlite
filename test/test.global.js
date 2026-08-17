@@ -125,10 +125,9 @@ describe('main', function () {
         assert.deepStrictEqual(_syncedPeers, [200]);
         // Check that a message was sent to peer 100 for the missing patch (seq 3)
         assert.strictEqual(messageSentToPeer100.length, 2, 'Should have sent two messages to peer 100 for missing patch');
-        const _persistentPingLastTimestamp =  messageSentToPeer100[0].delta['100'][4];
         const _persistentPingPatchAt = messageSentToPeer100[0].at;
         assert.deepStrictEqual(simplifyStats(messageSentToPeer100), [
-          { type : PATCH, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2, _persistentPingLastTimestamp, 0], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1, _persistentPingLastTimestamp, 0] } },
+          { type : PATCH, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } },
           { type : MISSING_PATCH, peer : 100, minSeq : 3, maxSeq : 4, forPeer : 1 }
         ]);
 

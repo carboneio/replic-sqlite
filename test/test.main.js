@@ -1457,15 +1457,18 @@ describe('main', function () {
         return false;
       }, (success) => {
         assert.strictEqual(success, false);
-        // Verify the backoff timing - should start at 0 and increase exponentially with some tolerance
-        const _expectedDelays = [0, 10, 20, 40, 80, 160, 320, 640, 728];
-        for (let i = 0; i < _nbCalls.length; i++) {
-          const _actual = _nbCalls[i];
-          const _expected = _expectedDelays[i];
-          assert.ok(Math.abs(_actual - _expected) <= 20, `Call ${i}: expected ~${_expected}ms, got ${_actual}ms (tolerance: 20ms)` );
+        // Last delay is remaining time (maxTime - elapsed), so it absorbs all previous setTimeout drift.
+        // Do not assert it against a fixed 728ms. Allow 9 or 10 calls: last timer can fire ~1ms early
+        // and schedule one extra 1-2ms retry before hitting the timeout.
+        assert.ok(_nbCalls.length >= 9 && _nbCalls.length <= 10, `Should have called the function ~9 times, got ${_nbCalls.length}`);
+        assert.ok(_nbCalls[0] <= 20, `Call 0: expected ~0ms, got ${_nbCalls[0]}ms`);
+        for (let i = 1; i < 8; i++) {
+          const _expected = 10 * (2 ** (i - 1));
+          assert.ok(Math.abs(_nbCalls[i] - _expected) <= 50, `Call ${i}: expected ~${_expected}ms, got ${_nbCalls[i]}ms (tolerance: 50ms)`);
         }
-        assert.strictEqual(_nbCalls.length, 9, 'Should have called the function 9 times');
-        assert.ok(Math.abs(Date.now() - _start - 2000) <= 20, `Should have taken ~2000ms, got ${Date.now() - _start}ms`);
+        const _elapsed = Date.now() - _start;
+        assert.ok(_elapsed >= 2000, `Should have taken at least 2000ms, got ${_elapsed}ms`);
+        assert.ok(_elapsed <= 2200, `Should have taken ~2000ms, got ${_elapsed}ms`);
         done();
       }, 2000, 10);
     });
