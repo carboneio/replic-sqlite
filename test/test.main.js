@@ -4,6 +4,7 @@ const hlc = require('../lib/hlc.js');
 const path = require('path');
 const fs = require('fs');
 const Database  = require('better-sqlite3');
+const EventEmitter = require('events');
 const { removeLastTimestampInStats } = require('./helper.js');
 const MockDate = require('mockdate');
 
@@ -1030,6 +1031,44 @@ describe('main', function () {
     });
 
 
+  });
+
+  describe('_detectMissingSequenceIds', function () {
+    let db, app, socket2;
+    beforeEach (function () {
+      db = connect(); // memory db
+      app = SQLiteOnSteroid(db, 1);
+      socket2 = new EventEmitter();
+      socket2.send = () => {};
+      app.addRemotePeer(2, socket2);
+      app.migrate([{ up : _testSchema, down : ''}]);
+    });
+    afterEach (function () {
+      close(db);
+    });
+
+    it('should not consider a missing patch as received when a ping announces the next sequence id', function () {
+      const _now = Date.now();
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      // patch seq 2 is lost on the network, then peer 2 sends a ping with its last sequence id (2)
+      socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      const _peerStat = app.status().peerStats[2];
+      assert.strictEqual(_peerStat[app.LAST_SEQUENCE_ID], 2);
+      assert.strictEqual(_peerStat[app.LAST_PATCH_AT_TIMESTAMP], hlc.from(_now - 1));
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1, 'patch seq 2 was never received');
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP], hlc.from(_now - 2));
+    });
+
+    it('should consider a persistent ping as a received patch', function () {
+      const _now = Date.now();
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      // persistent ping (PATCH stored in pending_patches)
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      const _peerStat = app.status().peerStats[2];
+      assert.strictEqual(_peerStat[app.LAST_SEQUENCE_ID], 2);
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 2);
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP], hlc.from(_now - 1));
+    });
   });
 
   describe('_onRequestForMissingPatchFromPeers', function () {

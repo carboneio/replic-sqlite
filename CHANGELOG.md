@@ -1,4 +1,8 @@
 
+## v0.4.2
+
+- Fix: a PING announcing the next sequence id no longer marks the last (possibly lost) patch as received. Only real patches advance the guaranteed contiguous sequence id.
+
 ## v0.4.1
 
 - Upgrade `better-sqlite3` and all dev deps
