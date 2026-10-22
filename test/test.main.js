@@ -670,6 +670,27 @@ describe('main', function () {
       }
     });
 
+    it('should converge to the same row whatever the order of reception, even if the most recent patch has a NULL value', function (done) {
+      // Two consecutive patches of the same peer can have the same HLC timestamp (same millisecond)
+      const _at = hlc.from(Date.now());
+      const _patch1 = { type : 10 /* PATCH */, at : _at, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } };
+      const _patch2 = { type : 10 /* PATCH */, at : _at, peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, deletedAt : 5 } }; // name is not set (NULL)
+      const _db2 = connect();
+      const _app2 = SQLiteOnSteroid(_db2, 1);
+      _app2.migrate([{ up : _testSchema, down : ''}]);
+      app._onPatchReceivedFromPeers(_patch1);
+      app._onPatchReceivedFromPeers(_patch2);
+      _app2._onPatchReceivedFromPeers(_patch2); // reverse order (packet reordering, retransmission)
+      _app2._onPatchReceivedFromPeers(_patch1);
+      setTimeout(() => {
+        const _expectedRows = [{ id : 1, tenantId : 2, name : '1a', deletedAt : 5, createdAt : null, binary : null }];
+        assert.deepStrictEqual(db.prepare('SELECT * FROM testA').all(), _expectedRows);
+        assert.deepStrictEqual(_db2.prepare('SELECT * FROM testA').all(), _expectedRows);
+        close(_db2);
+        done();
+      }, patchApplyDelayMs);
+    });
+
     it('should merge patches with Date.now() timestamp, sorting by peer id and sequence id', function (done) {
       const _constantTimestamp = Date.now(); // A fixed timestamp for all patches
       const _rowPatch1 = { at : hlc.from(_constantTimestamp), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '2a' } };

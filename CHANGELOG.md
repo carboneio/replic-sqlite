@@ -1,7 +1,11 @@
-
-## v0.4.2
+## v0.5.0
 
 - Fix: a PING announcing the next sequence id no longer marks the last (possibly lost) patch as received. Only real patches advance the guaranteed contiguous sequence id.
+- Fix: missing patches at the end of a peer's sequence (announced by a PING but never received) are now requested. Previously the peer was marked as synced and these patches were lost.
+- A peer starting with an empty database now requests the patches still retained by other peers instead of being marked as synced immediately.
+- A new or reconnected peer no longer triggers a persistent ping (a stored fake patch) on all peers. Non-persistent pings are now enough to detect missing patches. The hourly persistent ping is unchanged.
+- Fix: `keep_last` ignored non-NULL values when the first row read was a NULL with a higher priority. The merged row could differ between peers depending on the order patches were received (e.g. two patches with the same timestamp). NULL values (column not set by a patch) are now always ignored.
+- Remove unused and incorrect `keep_last_window` SQLite window function.
 
 ## v0.4.1
 

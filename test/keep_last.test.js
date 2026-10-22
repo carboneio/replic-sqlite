@@ -8,51 +8,10 @@ describe('keepLast extension', () => {
   before(() => {
     db = new Database(':memory:');
     db.loadExtension(path.resolve(__dirname, '../build/Release/keep_last'));
-
-    // Create and populate test table
-    db.exec(`
-      CREATE TABLE test_data (
-        id INTEGER PRIMARY KEY,
-        value TEXT
-      );
-      
-      INSERT INTO test_data (id, value) VALUES
-        (1, 'A'),
-        (2, NULL),
-        (3, NULL),
-        (4, 'B'),
-        (5, NULL),
-        (6, 'C'),
-        (7, NULL),
-        (8, NULL)
-    `);
   });
 
   after(() => {
     db.close();
-  });
-
-  it.skip('should keep last non-null value in window', () => {
-    //
-    const rows = db.prepare(`
-      SELECT 
-        id,
-        value,
-        keep_last(value, id) OVER (ORDER BY id) as kept_value
-      FROM test_data
-      ORDER BY id
-    `).all();
-
-    assert.deepStrictEqual(rows, [
-      { id : 1, value : 'A', kept_value : 'A' },
-      { id : 2, value : null, kept_value : 'A' },
-      { id : 3, value : null, kept_value : 'A' },
-      { id : 4, value : 'B', kept_value : 'B' },
-      { id : 5, value : null, kept_value : 'B' },
-      { id : 6, value : 'C', kept_value : 'C' },
-      { id : 7, value : null, kept_value : 'C' },
-      { id : 8, value : null, kept_value : 'C' }
-    ]);
   });
 
   it('should keep last value ', () => {
@@ -90,55 +49,53 @@ describe('keepLast extension', () => {
     ]);
   });
 
-  it.skip('should handle all NULL values', () => {
-    const rows = db.prepare(`
-      WITH all_nulls(id, value) AS (
-        VALUES
-          (1, NULL),
-          (2, NULL),
-          (3, NULL)
+  it('should ignore NULL values even if the first row read has the highest priority', () => {
+    const _query = db.prepare(`
+      SELECT keep_last(value, patchedAt, peerId, sequenceId) AS kept_value FROM (
+        SELECT NULL AS value, 20 AS patchedAt, 1 AS peerId, 2 AS sequenceId
+        UNION ALL
+        SELECT 'a'  AS value, 10 AS patchedAt, 1 AS peerId, 1 AS sequenceId
       )
-      SELECT 
-        id,
-        value,
-        keepLast(value) OVER (ORDER BY id) as kept_value
-      FROM all_nulls
-      ORDER BY id
-    `).all();
-
-    assert.deepStrictEqual(rows, [
-      { id : 1, value : null, kept_value : null },
-      { id : 2, value : null, kept_value : null },
-      { id : 3, value : null, kept_value : null }
-    ]);
+    `);
+    assert.deepStrictEqual(_query.get(), { kept_value : 'a' });
   });
 
-  it.skip('should handle different data types', () => {
-    const rows = db.prepare(`
-      WITH mixed_types(id, value) AS (
-        VALUES
-          (1, 42),
-          (2, NULL),
-          (3, 3.14),
-          (4, NULL),
-          (5, 'text'),
-          (6, NULL)
-      )
-      SELECT 
-        id,
-        value,
-        keepLast(value) OVER (ORDER BY id) as kept_value
-      FROM mixed_types
-      ORDER BY id
-    `).all();
+  it('should return the same value whatever the order of rows', () => {
+    const _rows = [
+      'SELECT \'a\'  AS value, 10 AS patchedAt, 1 AS peerId, 1 AS sequenceId',
+      'SELECT NULL AS value, 10 AS patchedAt, 1 AS peerId, 2 AS sequenceId', // same timestamp, higher sequenceId
+      'SELECT \'b\'  AS value, 10 AS patchedAt, 0 AS peerId, 9 AS sequenceId', // same timestamp, lower peerId
+      'SELECT NULL AS value, 30 AS patchedAt, 2 AS peerId, 1 AS sequenceId'  // most recent
+    ];
+    const _orders = [[0, 1, 2, 3], [3, 2, 1, 0], [1, 3, 0, 2], [2, 0, 3, 1]];
+    for (const _order of _orders) {
+      const _union = _order.map(i => _rows[i]).join(' UNION ALL ');
+      const _result = db.prepare(`SELECT keep_last(value, patchedAt, peerId, sequenceId) AS kept_value FROM (${_union})`).get();
+      assert.deepStrictEqual(_result, { kept_value : 'a' }, `order ${_order}`);
+    }
+  });
 
-    assert.deepStrictEqual(rows, [
-      { id : 1, value : 42, kept_value : 42 },
-      { id : 2, value : null, kept_value : 42 },
-      { id : 3, value : 3.14, kept_value : 3.14 },
-      { id : 4, value : null, kept_value : 3.14 },
-      { id : 5, value : 'text', kept_value : 'text' },
-      { id : 6, value : null, kept_value : 'text' }
-    ]);
+  it('should return NULL if all values are NULL', () => {
+    const _result = db.prepare(`
+      SELECT keep_last(value, patchedAt, peerId, sequenceId) AS kept_value FROM (
+        SELECT NULL AS value, 1 AS patchedAt, 1 AS peerId, 1 AS sequenceId
+        UNION ALL
+        SELECT NULL AS value, 2 AS patchedAt, 1 AS peerId, 2 AS sequenceId
+      )
+    `).get();
+    assert.deepStrictEqual(_result, { kept_value : null });
+  });
+
+  it('should keep the type of the value', () => {
+    for (const _value of [42, 3.14, 'text', Buffer.from('ab')]) {
+      const _result = db.prepare(`
+        SELECT keep_last(value, patchedAt, peerId, sequenceId) AS kept_value FROM (
+          SELECT ? AS value, 1 AS patchedAt, 1 AS peerId, 1 AS sequenceId
+          UNION ALL
+          SELECT NULL AS value, 2 AS patchedAt, 1 AS peerId, 2 AS sequenceId
+        )
+      `).get(_value);
+      assert.deepStrictEqual(_result, { kept_value : _value });
+    }
   });
 });
