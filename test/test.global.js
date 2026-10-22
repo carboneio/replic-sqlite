@@ -125,9 +125,9 @@ describe('main', function () {
         assert.deepStrictEqual(_syncedPeers, [200]);
         // Check that a message was sent to peer 100 for the missing patch (seq 3)
         assert.strictEqual(messageSentToPeer100.length, 2, 'Should have sent two messages to peer 100 for missing patch');
-        const _persistentPingPatchAt = messageSentToPeer100[0].at;
+        // peer 1 has not created any patch yet: the ping announces seq 0
         assert.deepStrictEqual(simplifyStats(messageSentToPeer100), [
-          { type : PATCH, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } },
+          { type : PING, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 2], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } },
           { type : MISSING_PATCH, peer : 100, minSeq : 3, maxSeq : 4, forPeer : 1 }
         ]);
 
@@ -141,7 +141,7 @@ describe('main', function () {
           assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
           assert.strictEqual(messageSentToPeer100.length, 4, 'Should have sent four messages to peer 100 for missing patch');
-          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : PING, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 3], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
+          assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[2], { type : PING, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now - 1), 3], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
           assert.deepStrictEqual(messageSentToPeer100[3], { type : MISSING_PATCH, peer : 100, minSeq : 4, maxSeq : 4, forPeer : 1 });
 
           _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 4, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5z' } });
@@ -153,9 +153,11 @@ describe('main', function () {
             assert.deepStrictEqual(_tableARows, [{ id : 1, tenantId : 1, name : '1c' }, { id : 5, tenantId : 1, name : '5a' }]);
 
             assert.strictEqual(messageSentToPeer100.length, 5, 'Should have sent five messages to peer 100 for missing patch');
-            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : PING, at : _persistentPingPatchAt, peer : 1, seq : 1, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
+            assert.deepStrictEqual(simplifyStats(messageSentToPeer100)[4], { type : PING, at : 0, peer : 1, seq : 0, ver : 1, tab : '_', delta : { '100' : [hlc.from(_now), 5, hlc.from(_now), 4], '200' : [hlc.from(_now-1), 1, hlc.from(_now-1), 1] } });
 
             // Verify that _areAllMyPatchesStoredByPeers is updated correctly when receiving a ping with the statistics about me
+            assert.strictEqual(app._areAllMyPatchesStoredByPeers(), true, 'peer 1 has not created any patch yet');
+            app.upsert('testA', { id : 9, tenantId : 1, name : '9a' }); // peer 1 creates its first patch (seq 1)
             assert.strictEqual(app._areAllMyPatchesStoredByPeers(), false);
             // the peer 100 send a ping with the statistics about me (1)
             _eventEmitter100.emit('message', { type : PING, at : hlc.from(_now), peer : 100, seq : 4, ver : 1, delta : { '1' : [0, 0, 0, 1, 0, 0]}  });
@@ -228,13 +230,13 @@ describe('main', function () {
       assert.deepStrictEqual(messageSentToPeer200, []);
       setTimeout(() => {
         heartBeatSync(app);
-        // should send a start patch to other peers
+        // should send a non persistent ping with the last sequence id of peer 1 (no new patch)
         assert.deepStrictEqual(messageSentToPeer100.length, 1);
-        assert.deepStrictEqual(messageSentToPeer100[0].type, PATCH);
+        assert.deepStrictEqual(messageSentToPeer100[0].type, PING);
         assert.deepStrictEqual(messageSentToPeer100[0].peer, 1);
-        assert.deepStrictEqual(messageSentToPeer100[0].seq, 4);
+        assert.deepStrictEqual(messageSentToPeer100[0].seq, 3);
         assert.deepStrictEqual(_syncedPeers, []);
-        // at startup, each send a persistent patch to make sure we are synced (could be improved in the feature)
+        // other peers send new patches, which reveal the patches missing since the existing ones
         _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 100, seq : 3500, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 10, name : '1b' } });
         _eventEmitter200.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 200, seq : 10, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 30, name : '1c' } });
         assert.deepStrictEqual(_syncedPeers, []);
