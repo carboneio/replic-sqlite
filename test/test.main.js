@@ -1059,6 +1059,104 @@ describe('main', function () {
       assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP], hlc.from(_now - 2));
     });
 
+    it('should request missing patches at the end of the sequence announced by a ping, and not consider the peer as synced', function () {
+      const _messagesSentToPeer2 = [];
+      socket2.send = (msg) => _messagesSentToPeer2.push(msg);
+      const _syncedPeers = [];
+      app.event.on('synced', (peerId) => _syncedPeers.push(peerId));
+      const _now = Date.now();
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 3), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      // patches seq 2 and 3 are lost on the network, then peer 2 sends a ping with its last sequence id (3)
+      socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : '_', delta : {} });
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 3, forPeer : 1 }]);
+      const _peerStat = app.status().peerStats[2];
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1);
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP], hlc.from(_now - 3));
+      assert.deepStrictEqual(_syncedPeers, []);
+      // the missing patches are received
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 2, name : '2a' } });
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 2, name : '3a' } });
+      app._detectAndRequestMissingPatches();
+      assert.strictEqual(_messagesSentToPeer2.length, 1, 'no new request');
+      assert.strictEqual(app.status().peerStats[2][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 3);
+      assert.deepStrictEqual(_syncedPeers, [2]);
+    });
+
+    it('should request all missing patches announced by a ping if no patch of this peer is stored', function () {
+      const _messagesSentToPeer2 = [];
+      socket2.send = (msg) => _messagesSentToPeer2.push(msg);
+      const _syncedPeers = [];
+      app.event.on('synced', (peerId) => _syncedPeers.push(peerId));
+      // patches seq 1 and 2 are lost on the network
+      socket2.emit('message', { type : 20 /* PING */, at : hlc.from(Date.now()), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 1, maxSeq : 2, forPeer : 1 }]);
+      assert.strictEqual(app.status().peerStats[2][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 0);
+      assert.deepStrictEqual(_syncedPeers, []);
+    });
+
+    it('should request missing patches in the middle and at the end of the sequence, and keep the guaranteed sequence before the first missing range', function () {
+      const _messagesSentToPeer2 = [];
+      socket2.send = (msg) => _messagesSentToPeer2.push(msg);
+      const _syncedPeers = [];
+      app.event.on('synced', (peerId) => _syncedPeers.push(peerId));
+      const _now = Date.now();
+      // patches seq 3 and 5 are lost on the network, then peer 2 sends a ping with its last sequence id (5)
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 5), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 4), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 2, name : '2a' } });
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 4, ver : 1, tab : 'testA', delta : { id : 4, tenantId : 2, name : '4a' } });
+      socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 5, ver : 1, tab : '_', delta : {} });
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(_messagesSentToPeer2, [
+        { type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 3, maxSeq : 3, forPeer : 1 },
+        { type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 5, maxSeq : 5, forPeer : 1 }
+      ]);
+      // The missing range at the end of the sequence (after seq 4) must not override the guaranteed sequence (seq 2)
+      const _peerStat = app.status().peerStats[2];
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 2);
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_PATCH_AT_TIMESTAMP], hlc.from(_now - 4));
+      assert.deepStrictEqual(_syncedPeers, []);
+    });
+
+    it('should not consider a disconnected peer as synced if patches are missing at the end of its sequence, and request them when it reconnects', function () {
+      const _messagesSentToPeer2 = [];
+      socket2.send = (msg) => _messagesSentToPeer2.push(msg);
+      const _syncedPeers = [];
+      app.event.on('synced', (peerId) => _syncedPeers.push(peerId));
+      const _now = Date.now();
+      socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 3), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      // patches seq 2 and 3 are lost on the network, then peer 2 sends a ping with its last sequence id (3) and disconnects
+      socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : '_', delta : {} });
+      app.closeRemotePeer(2);
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(_messagesSentToPeer2, [], 'no socket to send the request');
+      const _peerStat = app.status().peerStats[2];
+      assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1);
+      assert.strictEqual(_peerStat[app.LAST_SEQUENCE_ID], 3);
+      assert.deepStrictEqual(_syncedPeers, []);
+      // peer 2 reconnects (it also cancels the cleanup timer of the disconnected peer)
+      app.addRemotePeer(2, socket2);
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 3, forPeer : 1 }]);
+      assert.deepStrictEqual(_syncedPeers, []);
+    });
+
+    it('should not request missing patches nor create stats for a peer which is stored in the database but unknown', function () {
+      const _messagesSentToPeer2 = [];
+      socket2.send = (msg) => _messagesSentToPeer2.push(msg);
+      const _now = Date.now();
+      // patches of peer 9 (dead or never connected) with a missing patch seq 2
+      app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 9, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 9, name : '1a' } });
+      app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 9, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 9, name : '3a' } });
+      const _missingSequenceIds = app._getMissingPatches(0);
+      assert.deepStrictEqual(_missingSequenceIds, [
+        { peerId : 9, sequenceId : 1, patchedAt : hlc.from(_now - 2), nbMissingSequenceIds : 1 }
+      ]);
+      assert.deepStrictEqual(_messagesSentToPeer2, []);
+      assert.strictEqual(app.status().peerStats[9], undefined);
+    });
+
     it('should consider a persistent ping as a received patch', function () {
       const _now = Date.now();
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
