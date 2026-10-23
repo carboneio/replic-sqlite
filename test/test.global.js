@@ -112,6 +112,7 @@ describe('main', function () {
       _eventEmitter200.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 200, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1c' } });
       _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now-1), peer : 100, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 1, name : '1b' } });
       _eventEmitter100.emit('message', { type : PATCH, at : hlc.from(_now), peer : 100, seq : 5, ver : 1, tab : 'testA', delta : { id : 5, tenantId : 1, name : '5a' } });
+      app._flushReceivedPatches();
       assert.deepStrictEqual(_status.peerStats[100].slice(0,-2), [hlc.from(_now), 5, hlc.from(_now-1), 2]);
       // should insert rows as soon as possible
       setTimeout(() => {
@@ -356,6 +357,7 @@ describe('main', function () {
 
 
 function heartBeatSync (app) {
+  app._flushReceivedPatches(); // the received patches are always flushed by the event loop before the heartbeat
   app._generatePingStatMessage();
   app._detectAndRequestMissingPatches();
 }

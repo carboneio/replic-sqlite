@@ -8,7 +8,12 @@
 - Remove unused and incorrect `keep_last_window` SQLite window function.
 - Fix: local patches always get a higher HLC timestamp than the previous local patch, even if the system clock goes backwards (NTP adjustment) or the node restarts with a clock behind its last stored patch. Previously, the new write could lose against an older write of the same peer.
 - The "clock drift" warning is now displayed only once when the drift between peers exceeds 1 second, with the measured drift. It no longer floods logs when many patches are generated at the same millisecond.
-
+- Fix: a patch stored in the database is now always applied, even if the process is killed. Received patches are saved and applied in the same transaction, in the next event loop. `upsert` saves and applies the patch in the same transaction.
+- Fix: an error when applying a received patch (e.g. a CHECK constraint) no longer crashes the process. The invalid patch is not stored and will be requested again. Other patches are not blocked.
+- Fix: a failed `upsert` no longer consumes a sequence id, which created a gap that other peers requested forever.
+- `readYourWrite` now waits until the patch is applied, not only stored.
+- Performance: patches received in the same event loop are saved and applied in a single transaction. Receiving patches is 5 times faster with 100 patches per event loop (~93,000 → ~450,000 patches/s) and up to 7 times faster during a synchronization burst (~98,000 → ~650,000 patches/s). `upsert` and isolated patches are unchanged (~36,000 and ~30,000 patches/s).
+- Add performance tests in `test/test.perf.js`, executed with the other tests (set `REPLIC_SQLITE_LIB` to compare with another version).
 
 ## v0.4.1
 

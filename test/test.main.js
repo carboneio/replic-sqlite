@@ -40,6 +40,25 @@ describe('main', function () {
 
     CREATE INDEX testA_patches_at_idx ON testA_patches (_patchedAt);
   `;
+  // The CHECK constraint exists only in the main table: the patch can be saved, but it cannot be applied
+  const _testSchemaWithCheck = `
+    CREATE TABLE testC (
+      id            INTEGER NOT NULL,
+      name          TEXT CHECK (name <> 'forbidden'),
+      PRIMARY KEY (id)
+    ) STRICT;
+
+    CREATE TABLE testC_patches (
+      _patchedAt    INTEGER  NOT NULL,
+      _sequenceId   INTEGER  NOT NULL,
+      _peerId       INTEGER  NOT NULL,
+
+      id            INTEGER NOT NULL,
+      name          TEXT
+    ) STRICT;
+
+    CREATE INDEX testC_patches_at_idx ON testC_patches (_patchedAt);
+  `;
   describe('_generateMergePatchesQueryPlan', function () {
     let db, app;
     let _prepareStatementHookCalls = [];
@@ -182,6 +201,22 @@ describe('main', function () {
         });
 
         done();
+      });
+    });
+
+    it('should not store the patch nor consume the sequence id if the patch cannot be applied (atomic upsert)', function (done) {
+      const _db = connect();
+      const _app = SQLiteOnSteroid(_db, 1800);
+      _app.migrate([{ up : _testSchemaWithCheck, down : ''}]);
+      _app.upsert('testC', { id : 1, name : 'forbidden' }, (err) => {
+        assert.ok(err instanceof Error);
+        assert.strictEqual(_db.prepare('SELECT count(*) AS nb FROM testC_patches').get().nb, 0, 'The patch must not be stored');
+        _app.upsert('testC', { id : 1, name : 'allowed' }, (err, sessionToken) => {
+          assert.strictEqual(err, null);
+          assert.strictEqual(sessionToken, '1800.1', 'The sequence id 1 must not be consumed by the failed upsert');
+          close(_db);
+          done();
+        });
       });
     });
 
@@ -591,12 +626,10 @@ describe('main', function () {
         app._onPatchReceivedFromPeers(_patch);
       }
 
-      // Verify rows in patches table
-      const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
-      assert.strictEqual(_patchRows.length, 7, 'All 7 patches should exist in patches table');
-
-      // Verify rows in main table
+      // Verify rows in patches and main tables
       setTimeout(() => {
+        const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
+        assert.strictEqual(_patchRows.length, 7, 'All 7 patches should exist in patches table');
         const _mainRows = db.prepare('SELECT * FROM testA').all();
         assert.strictEqual(_mainRows.length, 2, 'Two rows should exist in main table');
         // Check the first row (id: 1, tenantId: 2)
@@ -628,12 +661,10 @@ describe('main', function () {
         app._onPatchReceivedFromPeers(_patch);
       }
 
-      // Verify rows in patches table
-      const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
-      assert.strictEqual(_patchRows.length, 7, 'All 7 patches should exist in patches table');
-
-      // Verify rows in main table
+      // Verify rows in patches and main tables
       setTimeout(() => {
+        const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
+        assert.strictEqual(_patchRows.length, 7, 'All 7 patches should exist in patches table');
         const _mainRows = db.prepare('SELECT * FROM testA').all();
         assert.strictEqual(_mainRows.length, 1, 'One row should exist in main table');
         // Check the first row (id: 1, tenantId: 2)
@@ -662,15 +693,13 @@ describe('main', function () {
         if (err) {
           throw err;
         }
-        // Verify rows in patches table
-        const _patchRows = db.prepare('SELECT * FROM testA_patches ORDER BY _peerId').all();
-        assert.strictEqual(_patchRows.length, 5, 'All 5 patches should exist in patches table');
-        assert.strictEqual(_patchRows[0]._peerId, 1);
-        assert.strictEqual(hlc.toUnixTimestamp(_patchRows[0]._patchedAt), baseTimestamp+1);
-        assert.strictEqual(hlc.toCounter(_patchRows[0]._patchedAt), 1);
-
-        // Verify rows in main table
+        // Verify rows in patches and main tables
         setTimeout(() => {
+          const _patchRows = db.prepare('SELECT * FROM testA_patches ORDER BY _peerId').all();
+          assert.strictEqual(_patchRows.length, 5, 'All 5 patches should exist in patches table');
+          assert.strictEqual(_patchRows[0]._peerId, 1);
+          assert.strictEqual(hlc.toUnixTimestamp(_patchRows[0]._patchedAt), baseTimestamp+1);
+          assert.strictEqual(hlc.toCounter(_patchRows[0]._patchedAt), 1);
           const _mainRows = db.prepare('SELECT * FROM testA').all();
           assert.strictEqual(_mainRows.length, 1, 'One row should exist in main table');
           const _row1 = _mainRows.find(row => row.id === 1 && row.tenantId === 2);
@@ -698,6 +727,40 @@ describe('main', function () {
       catch (e) {
         assert.fail(e);
       }
+    });
+
+    it('should never store a received patch without applying it (crash safety)', function (done) {
+      const _patch = { type : 10 /* PATCH */, at : hlc.from(Date.now()), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } };
+      app._onPatchReceivedFromPeers(_patch);
+      // The process can be killed here (SIGKILL): what is stored in the database must be consistent
+      const _nbPatches = db.prepare('SELECT count(*) AS nb FROM testA_patches').get().nb;
+      const _nbRows = db.prepare('SELECT count(*) AS nb FROM testA').get().nb;
+      assert.strictEqual(_nbPatches, _nbRows, 'A stored patch must be applied');
+      setTimeout(() => {
+        assert.strictEqual(db.prepare('SELECT count(*) AS nb FROM testA_patches').get().nb, 1);
+        assert.deepStrictEqual(db.prepare('SELECT id, name FROM testA').all(), [{ id : 1, name : '1a' }]);
+        done();
+      }, patchApplyDelayMs);
+    });
+
+    it('should not store nor consider as received a patch which cannot be applied, without blocking the other patches', function (done) {
+      const _db = connect();
+      const _app = SQLiteOnSteroid(_db, 1);
+      _app.addRemotePeer(20, { send : () => {} });
+      _app.migrate([{ up : _testSchema + _testSchemaWithCheck, down : ''}]);
+      const _at = hlc.from(Date.now());
+      _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : _at, peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
+      _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : _at, peer : 20, seq : 2, ver : 1, tab : 'testC', delta : { id : 1, name : 'forbidden' } });
+      _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : _at, peer : 20, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 2, name : '3a' } });
+      setTimeout(() => {
+        assert.deepStrictEqual(_db.prepare('SELECT id, name FROM testA ORDER BY id').all(), [{ id : 1, name : '1a' }, { id : 3, name : '3a' }]);
+        assert.strictEqual(_db.prepare('SELECT count(*) AS nb FROM testC_patches').get().nb, 0);
+        const _peerStat = _app.status().peerStats[20];
+        assert.strictEqual(_peerStat[_app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1, 'The patch seq 2 is not stored: it must be requested again');
+        assert.strictEqual(_peerStat[_app.LAST_SEQUENCE_ID], 3);
+        close(_db);
+        done();
+      }, patchApplyDelayMs);
     });
 
     it('should converge to the same row whatever the order of reception, even if the most recent patch has a NULL value', function (done) {
@@ -736,12 +799,10 @@ describe('main', function () {
         app._onPatchReceivedFromPeers(_patch);
       }
 
-      // Verify rows in patches table
-      const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
-      assert.strictEqual(_patchRows.length, 6, 'All 6 patches should exist in patches table');
-
-      // Verify rows in main table
+      // Verify rows in patches and main tables
       setTimeout(() => {
+        const _patchRows = db.prepare('SELECT * FROM testA_patches').all();
+        assert.strictEqual(_patchRows.length, 6, 'All 6 patches should exist in patches table');
         const _mainRows = db.prepare('SELECT * FROM testA').all();
         assert.strictEqual(_mainRows.length, 1, 'One row should exist in main table');
         // Check the first row (id: 1, tenantId: 2)
@@ -762,25 +823,26 @@ describe('main', function () {
         app._onPatchReceivedFromPeers(_patch);
       }
 
-      const _patchRows = db.prepare('SELECT *, json(delta) as delta FROM pending_patches').all();
-      assert.strictEqual(_patchRows.length, 2, 'All 2 patches should exist in pending_patches table');
-      assert.deepStrictEqual(_patchRows, [{
-        _patchedAt   : hlc.from(_constantTimestamp),
-        _peerId      : 20,
-        _sequenceId  : 1,
-        delta        : '{"20":[0,0]}',
-        patchVersion : 1,
-        tableName    : '_'
-      }, {
-        _patchedAt   : hlc.from(_constantTimestamp),
-        _peerId      : 10,
-        _sequenceId  : 20,
-        delta        : '{"20":[1,1]}',
-        patchVersion : 2,
-        tableName    : '_'
-      }]);
-
-      done();
+      setImmediate(() => {
+        const _patchRows = db.prepare('SELECT *, json(delta) as delta FROM pending_patches').all();
+        assert.strictEqual(_patchRows.length, 2, 'All 2 patches should exist in pending_patches table');
+        assert.deepStrictEqual(_patchRows, [{
+          _patchedAt   : hlc.from(_constantTimestamp),
+          _peerId      : 20,
+          _sequenceId  : 1,
+          delta        : '{"20":[0,0]}',
+          patchVersion : 1,
+          tableName    : '_'
+        }, {
+          _patchedAt   : hlc.from(_constantTimestamp),
+          _peerId      : 10,
+          _sequenceId  : 20,
+          delta        : '{"20":[1,1]}',
+          patchVersion : 2,
+          tableName    : '_'
+        }]);
+        done();
+      });
     });
 
     it('should save patches with mismatching version to pending_patches table and apply them later', function (done) {
@@ -1099,6 +1161,7 @@ describe('main', function () {
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
       // patch seq 2 is lost on the network, then peer 2 sends a ping with its last sequence id (2)
       socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      app._flushReceivedPatches();
       const _peerStat = app.status().peerStats[2];
       assert.strictEqual(_peerStat[app.LAST_SEQUENCE_ID], 2);
       assert.strictEqual(_peerStat[app.LAST_PATCH_AT_TIMESTAMP], hlc.from(_now - 1));
@@ -1115,6 +1178,7 @@ describe('main', function () {
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 3), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
       // patches seq 2 and 3 are lost on the network, then peer 2 sends a ping with its last sequence id (3)
       socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : '_', delta : {} });
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 3, forPeer : 1 }]);
       const _peerStat = app.status().peerStats[2];
@@ -1124,6 +1188,7 @@ describe('main', function () {
       // the missing patches are received
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 2, name : '2a' } });
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 2, name : '3a' } });
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.strictEqual(_messagesSentToPeer2.length, 1, 'no new request');
       assert.strictEqual(app.status().peerStats[2][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 3);
@@ -1137,6 +1202,7 @@ describe('main', function () {
       app.event.on('synced', (peerId) => _syncedPeers.push(peerId));
       // patches seq 1 and 2 are lost on the network
       socket2.emit('message', { type : 20 /* PING */, at : hlc.from(Date.now()), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 1, maxSeq : 2, forPeer : 1 }]);
       assert.strictEqual(app.status().peerStats[2][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 0);
@@ -1154,6 +1220,7 @@ describe('main', function () {
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 4), peer : 2, seq : 2, ver : 1, tab : 'testA', delta : { id : 2, tenantId : 2, name : '2a' } });
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 4, ver : 1, tab : 'testA', delta : { id : 4, tenantId : 2, name : '4a' } });
       socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 5, ver : 1, tab : '_', delta : {} });
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.deepStrictEqual(_messagesSentToPeer2, [
         { type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 3, maxSeq : 3, forPeer : 1 },
@@ -1176,6 +1243,7 @@ describe('main', function () {
       // patches seq 2 and 3 are lost on the network, then peer 2 sends a ping with its last sequence id (3) and disconnects
       socket2.emit('message', { type : 20 /* PING */, at : hlc.from(_now - 1), peer : 2, seq : 3, ver : 1, tab : '_', delta : {} });
       app.closeRemotePeer(2);
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.deepStrictEqual(_messagesSentToPeer2, [], 'no socket to send the request');
       const _peerStat = app.status().peerStats[2];
@@ -1184,6 +1252,7 @@ describe('main', function () {
       assert.deepStrictEqual(_syncedPeers, []);
       // peer 2 reconnects (it also cancels the cleanup timer of the disconnected peer)
       app.addRemotePeer(2, socket2);
+      app._flushReceivedPatches();
       app._detectAndRequestMissingPatches();
       assert.deepStrictEqual(_messagesSentToPeer2, [{ type : 30 /* MISSING_PATCH */, peer : 2, minSeq : 2, maxSeq : 3, forPeer : 1 }]);
       assert.deepStrictEqual(_syncedPeers, []);
@@ -1196,6 +1265,7 @@ describe('main', function () {
       // patches of peer 9 (dead or never connected) with a missing patch seq 2
       app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 9, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 9, name : '1a' } });
       app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 9, seq : 3, ver : 1, tab : 'testA', delta : { id : 3, tenantId : 9, name : '3a' } });
+      app._flushReceivedPatches();
       const _missingSequenceIds = app._getMissingPatches(0);
       assert.deepStrictEqual(_missingSequenceIds, [
         { peerId : 9, sequenceId : 1, patchedAt : hlc.from(_now - 2), nbMissingSequenceIds : 1 }
@@ -1209,6 +1279,7 @@ describe('main', function () {
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 2), peer : 2, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : '1a' } });
       // persistent ping (PATCH stored in pending_patches)
       socket2.emit('message', { type : 10 /* PATCH */, at : hlc.from(_now - 1), peer : 2, seq : 2, ver : 1, tab : '_', delta : {} });
+      app._flushReceivedPatches();
       const _peerStat = app.status().peerStats[2];
       assert.strictEqual(_peerStat[app.LAST_SEQUENCE_ID], 2);
       assert.strictEqual(_peerStat[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 2);
