@@ -6,6 +6,9 @@
 - A new or reconnected peer no longer triggers a persistent ping (a stored fake patch) on all peers. Non-persistent pings are now enough to detect missing patches. The hourly persistent ping is unchanged.
 - Fix: `keep_last` ignored non-NULL values when the first row read was a NULL with a higher priority. The merged row could differ between peers depending on the order patches were received (e.g. two patches with the same timestamp). NULL values (column not set by a patch) are now always ignored.
 - Remove unused and incorrect `keep_last_window` SQLite window function.
+- Fix: local patches always get a higher HLC timestamp than the previous local patch, even if the system clock goes backwards (NTP adjustment) or the node restarts with a clock behind its last stored patch. Previously, the new write could lose against an older write of the same peer.
+- The "clock drift" warning is now displayed only once when the drift between peers exceeds 1 second, with the measured drift. It no longer floods logs when many patches are generated at the same millisecond.
+
 
 ## v0.4.1
 

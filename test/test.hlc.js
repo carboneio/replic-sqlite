@@ -112,12 +112,12 @@ describe('hlc', function () {
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 3));
       assert.strictEqual(hlc.getClockDriftMs(), 11);
 
-      hlc.receive(hlc.from(1735689600011, 2)); // receive a remote HLC with same timestamp but higher counter
-      assert.strictEqual(hlc.create(), hlc.from(1735689600011, 6));
-      assert.strictEqual(hlc.create(), hlc.from(1735689600011, 7));
+      hlc.receive(hlc.from(1735689600011, 2)); // receive a remote HLC with same timestamp but higher counter than the remote one, lower than my last HLC
+      assert.strictEqual(hlc.create(), hlc.from(1735689600011, 4));
+      assert.strictEqual(hlc.create(), hlc.from(1735689600011, 5));
       assert.strictEqual(hlc.getClockDriftMs(), 11);
 
-      hlc.receive(hlc.from(1735689600011, 0)); // receive a remote HLC with same timestamp but lower counter
+      hlc.receive(hlc.from(1735689600011, 7)); // receive a remote HLC with same timestamp but higher counter than my last HLC
       assert.strictEqual(hlc.create(), hlc.from(1735689600011, 8));
       assert.strictEqual(hlc.getClockDriftMs(), 11);
 
@@ -141,9 +141,43 @@ describe('hlc', function () {
 
       MockDate.reset();
     });
+
+    it('should never return a lower HLC than the previous one if the local clock goes backwards', function () {
+      MockDate.set(1735689600100);
+      assert.strictEqual(hlc.create(), hlc.from(1735689600100, 0));
+      MockDate.set(1735689600000); // the clock goes backwards (NTP adjustment)
+      assert.strictEqual(hlc.create(), hlc.from(1735689600100, 1));
+      assert.strictEqual(hlc.create(), hlc.from(1735689600100, 2));
+      assert.strictEqual(hlc.getClockDriftMs(), 100);
+      MockDate.set(1735689600101); // the clock catches up
+      assert.strictEqual(hlc.create(), hlc.from(1735689600101, 0));
+    });
+
+    it('should warn only once if the clock drift is higher than 1 second, and again after the clock catches up', function () {
+      const _warn = console.warn;
+      const _warnings = [];
+      console.warn = (msg) => _warnings.push(msg);
+      try {
+        MockDate.set(1735689600000);
+        hlc.receive(hlc.from(1735689600500, 0)); // small drift: no warning
+        hlc.create();
+        assert.strictEqual(_warnings.length, 0);
+
+        hlc.receive(hlc.from(1735689602000, 0)); // real drift
+        hlc.create();
+        hlc.create();
+        assert.deepStrictEqual(_warnings, ['WARN: clock drift of 2000 ms. Make sure system time is synchronized with NTP on all peers']);
+
+        MockDate.set(1735689603000); // the clock catches up
+        hlc.create();
+        MockDate.set(1735689600000); // the clock goes backwards again
+        hlc.create();
+        assert.strictEqual(_warnings.length, 2);
+      }
+      finally {
+        console.warn = _warn;
+      }
+    });
   });
-
-
-
 });
 

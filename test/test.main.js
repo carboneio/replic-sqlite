@@ -185,6 +185,22 @@ describe('main', function () {
       });
     });
 
+    it('should keep the last local write if the local clock goes backwards (NTP adjustment)', function () {
+      const _now = Date.now();
+      try {
+        MockDate.set(_now);
+        app.upsert('testA', { id : 1, tenantId : 2, name : 'v1' });
+        MockDate.set(_now - 2000);
+        app.upsert('testA', { id : 1, tenantId : 2, name : 'v2' });
+      }
+      finally {
+        MockDate.reset();
+      }
+      const _patches = db.prepare('SELECT _patchedAt, _sequenceId FROM testA_patches ORDER BY _sequenceId').all();
+      assert.ok(_patches[1]._patchedAt > _patches[0]._patchedAt, 'The second patch must have a higher timestamp');
+      assert.strictEqual(db.prepare('SELECT name FROM testA').get().name, 'v2');
+    });
+
     it('should merge patches', async function () {
       const _rowPatch1 = { id : 1, tenantId : 2 , name : '2a' , deletedAt : 3, createdAt : 2   };
       const _rowPatch2 = { id : 1, tenantId : 2 , name : '2b' , deletedAt : 3, createdAt : 300 };
@@ -380,6 +396,20 @@ describe('main', function () {
 
     afterEach (function () {
       close(db);
+    });
+
+    it('should keep the last local write after a restart if the local clock is behind my last stored patch', function () {
+      const _lastPatchAt = hlc.from(Date.now() + 5000); // created before the restart, the clock went backwards since
+      db.exec(`
+        INSERT INTO testA_patches (_patchedAt, _sequenceId, _peerId, id, tenantId, name) VALUES (${_lastPatchAt}, 1, 1800, 10, 20, 'before_restart');
+        INSERT INTO testA (id, tenantId, name) VALUES (10, 20, 'before_restart');
+      `);
+      app = SQLiteOnSteroid(db, 1800);
+      app.migrate([{ up : '', down : ''}]); // Empty migration since schema already exists
+      app.upsert('testA', { id : 10, tenantId : 20, name : 'after_restart' });
+      const _newPatch = db.prepare('SELECT _patchedAt FROM testA_patches WHERE _sequenceId = 2').get();
+      assert.ok(_newPatch._patchedAt > _lastPatchAt, 'The new patch must have a higher timestamp than my last stored patch');
+      assert.strictEqual(db.prepare('SELECT name FROM testA').get().name, 'after_restart');
     });
 
     it('should continue sequence from last sequenceId in patches table', function (done) {
