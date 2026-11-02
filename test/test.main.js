@@ -1743,6 +1743,105 @@ describe('main', function () {
     });
   });
 
+  describe('exit', function () {
+    const heartbeatIntervalMs = 10; // exit waits the replication 5 * heartbeatIntervalMs = 50 ms
+    const PING = 20;
+    let db, app;
+    afterEach (function () {
+      app.exit();
+      close(db);
+    });
+
+    function createPeer (myPeerId) {
+      db = connect();
+      app = SQLiteOnSteroid(db, myPeerId, { heartbeatIntervalMs, databaseBackupAbsolutePathFn : (trigger, cb) => cb(null) });
+      app.migrate([{ up : _testSchema, down : ''}]);
+    }
+    function addRemotePeer (remotePeerId) {
+      const _socket = new EventEmitter();
+      _socket.messages = [];
+      _socket.send = (msg) => _socket.messages.push(msg);
+      app.addRemotePeer(remotePeerId, _socket);
+      return _socket;
+    }
+    // The heartbeat creates patches too (persistent ping), so the remote peer confirms my current last sequence id
+    function confirmMyPatches (socket, remotePeerId) {
+      const _sequenceId = app.status().lastSequenceId;
+      socket.emit('message', { type : PING, at : hlc.create(), peer : remotePeerId, seq : 0, ver : 1, delta : { [app.myPeerId] : [0, 0, 0, _sequenceId, 0, 0] } });
+    }
+
+    it('should ignore disconnected peers when waiting the replication', function (done) {
+      createPeer(10);
+      const _socket2 = addRemotePeer(2);
+      addRemotePeer(20);
+      app.upsert('testA', { id : 1, tenantId : 1, name : 'a' });
+      confirmMyPatches(_socket2, 2);
+      app.closeRemotePeer(20); // peer 20 is disconnected and never confirms
+      app.exit((err) => {
+        assert.strictEqual(err, null);
+        done();
+      });
+    });
+
+    it('should return an error if a connected peer does not confirm my patches', function (done) {
+      createPeer(10);
+      addRemotePeer(2);
+      app.upsert('testA', { id : 1, tenantId : 1, name : 'a' });
+      app.exit((err) => {
+        assert.strictEqual(err?.message, 'Replication consistency timeout');
+        done();
+      });
+    });
+
+    it('should wait the replication before the leader backup', function (done) {
+      createPeer(1);
+      const _socket2 = addRemotePeer(2);
+      app.upsert('testA', { id : 1, tenantId : 1, name : 'a' });
+      let _isConfirmed = false;
+      setTimeout(() => {
+        _isConfirmed = true;
+        confirmMyPatches(_socket2, 2);
+      }, heartbeatIntervalMs * 2);
+      app.exit((err, backupType) => {
+        assert.strictEqual(_isConfirmed, true, 'The leader must wait the replication before the backup');
+        assert.strictEqual(err, null);
+        assert.strictEqual(backupType, 'shutdown');
+        done();
+      });
+    });
+
+    it('should backup and return an error if the leader patches are not replicated', function (done) {
+      createPeer(1);
+      addRemotePeer(2);
+      app.upsert('testA', { id : 1, tenantId : 1, name : 'a' });
+      app.exit((err, backupType) => {
+        assert.strictEqual(err?.message, 'Replication consistency timeout');
+        assert.strictEqual(backupType, 'shutdown');
+        done();
+      });
+    });
+
+    it('should keep sending pings while waiting the replication, and stop the heartbeat after', function (done) {
+      createPeer(10);
+      const _socket2 = addRemotePeer(2);
+      app.upsert('testA', { id : 1, tenantId : 1, name : 'a' });
+      _socket2.messages = [];
+      setTimeout(() => {
+        // The ping announces my last sequence id, so that the peer can request my last patch if it was lost
+        assert.ok(_socket2.messages.some(msg => msg.type === PING && msg.seq === app.status().lastSequenceId), 'Pings must be sent while waiting');
+        confirmMyPatches(_socket2, 2);
+      }, heartbeatIntervalMs * 3);
+      app.exit((err) => {
+        assert.strictEqual(err, null);
+        const _nbMessages = _socket2.messages.length;
+        setTimeout(() => {
+          assert.strictEqual(_socket2.messages.length, _nbMessages, 'The heartbeat must be stopped after exit');
+          done();
+        }, heartbeatIntervalMs * 3);
+      });
+    });
+  });
+
   describe('_backoff', function () {
     let db;
     beforeEach (function () {
