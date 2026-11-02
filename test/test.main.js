@@ -783,6 +783,37 @@ describe('main', function () {
       }, patchApplyDelayMs);
     });
 
+    it('should ignore a received patch older than the retention, which could overwrite a recent value whose patches are deleted', function () {
+      const _retentionMs = 60 * 60 * 1000;
+      const _db = connect();
+      const _app = SQLiteOnSteroid(_db, 1, { maxPatchRetentionMs : _retentionMs });
+      _app.addRemotePeer(20, { send : () => {} });
+      _app.migrate([{ up : _testSchema, down : ''}]);
+      const _now = Date.now();
+      try {
+        // Peer 20 updates the row, then its patch is deleted by the retention policy
+        _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now), peer : 20, seq : 2, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : 'recent' } });
+        _app._flushReceivedPatches();
+        MockDate.set(_now + 2 * _retentionMs);
+        _app._deleteOldPatches();
+        assert.strictEqual(_db.prepare('SELECT count(*) AS nb FROM testA_patches').get().nb, 0);
+        // Late patches, older than the deleted one, are received (retransmission, peer back after a long disconnection, ...)
+        _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now - 1000), peer : 20, seq : 1, ver : 1, tab : 'testA', delta : { id : 1, tenantId : 2, name : 'old' } });
+        _app._onPatchReceivedFromPeers({ type : 10 /* PATCH */, at : hlc.from(_now + 1), peer : 20, seq : 3, ver : 2, tab : 'testA', delta : { id : 1, tenantId : 2, name : 'old with another version' } });
+        _app._flushReceivedPatches();
+        assert.deepStrictEqual(_db.prepare('SELECT id, name FROM testA').all(), [{ id : 1, name : 'recent' }]);
+        assert.strictEqual(_db.prepare('SELECT count(*) AS nb FROM testA_patches').get().nb, 0);
+        assert.strictEqual(_db.prepare('SELECT count(*) AS nb FROM pending_patches').get().nb, 0, 'It would be applied after the next migration');
+        const _peerStat = _app.status().peerStats[20];
+        assert.strictEqual(_peerStat[_app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1, 'The ignored patch is considered as received: it must not be requested again');
+        assert.strictEqual(_peerStat[_app.LAST_SEQUENCE_ID], 3);
+      }
+      finally {
+        MockDate.reset();
+        close(_db);
+      }
+    });
+
     it('should converge to the same row whatever the order of reception, even if the most recent patch has a NULL value', function (done) {
       // Two consecutive patches of the same peer can have the same HLC timestamp (same millisecond)
       const _at = hlc.from(Date.now());
@@ -1030,7 +1061,7 @@ describe('main', function () {
     it.skip('limit : 1');
 
     it('should detect missing sequence IDs (excluding my own patches, peerId = 1) and notify peers, and read in all tables (pending tables) and return them in order by peerId and sequenceId, and update peer stats', function (done) {
-      app = SQLiteOnSteroid(db, 1);
+      app = SQLiteOnSteroid(db, 1, { maxPatchRetentionMs : Infinity }); // patches have fixed timestamps in the past
       app.addRemotePeer(10, fakePeerSockets[10]);
       app.addRemotePeer(2, fakePeerSockets[2]);
       app.addRemotePeer(3, fakePeerSockets[3]);
