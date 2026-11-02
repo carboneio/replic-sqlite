@@ -21,6 +21,10 @@
 - Fix: the leader waits the replication before the shutdown backup. The backup is still done after a replication timeout, and the error is returned.
 - Fix: the heartbeat keeps running while `exit()` waits the replication, so peers can still detect and request my last patches.
 - Fix: received patches older than the retention period (`maxPatchRetentionMs`) are ignored. They could overwrite a more recent value whose patches were already deleted. They are still considered as received, so they are not requested again.
+- Fix: missing patches of a disconnected peer are requested to the other connected peers, the oldest first, then the next one at each heartbeat.
+- Fix: dead peers are remembered in `lostPeers` (exposed in `status()`) until their last patch is older than the retention period, and shared in pings. A new peer can now request the missing patches of a dead peer it has never known.
+- Ignore invalid lost peers announced in pings (old versions or unexpected data).
+- CI: fetch the full git history so that compatibility tests with v0.4.1 are executed.
 
 
 ## v0.4.1

@@ -1193,6 +1193,202 @@ describe('main', function () {
 
   });
 
+  describe('missing patches of disconnected and lost peers', function () {
+    const PATCH = 10;
+    const PING = 20;
+    const MISSING_PATCH = 30;
+    const maxPeerDisconnectionToleranceMs = 10;
+    let db, app, sockets, _now;
+    beforeEach (function () {
+      _now = Date.now();
+      db = connect();
+      app = SQLiteOnSteroid(db, 1, { maxPeerDisconnectionToleranceMs });
+      app.migrate([{ up : _testSchema, down : ''}]);
+      sockets = {};
+    });
+    afterEach (function () {
+      MockDate.reset();
+      app.exit();
+      close(db);
+    });
+
+    function addRemotePeer (peerId) {
+      const _socket = new EventEmitter();
+      _socket.messages = [];
+      _socket.send = (msg) => _socket.messages.push(msg);
+      app.addRemotePeer(peerId, _socket);
+      sockets[peerId] = _socket;
+    }
+    // Patch received directly from its peer, or retransmitted by another peer
+    function receivePatch (peerId, seq) {
+      app._onPatchReceivedFromPeers({ type : PATCH, at : hlc.from(_now) + seq, peer : peerId, seq, ver : 1, tab : 'testA', delta : { id : seq, tenantId : peerId, name : `${peerId}-${seq}` } });
+      app._flushReceivedPatches();
+    }
+    function receivePing (fromPeerId, delta) {
+      sockets[fromPeerId].emit('message', { type : PING, at : hlc.from(_now), peer : fromPeerId, seq : 0, ver : 1, delta });
+    }
+    function popMissingPatchRequests (peerId) {
+      const _requests = sockets[peerId].messages.filter(msg => msg.type === MISSING_PATCH);
+      sockets[peerId].messages = [];
+      return _requests;
+    }
+
+    it('should request the missing patches of a disconnected peer to the connected peers, the oldest first, with a rotation', function () {
+      addRemotePeer(5);
+      addRemotePeer(3);
+      addRemotePeer(10);
+      receivePatch(10, 1);
+      receivePatch(10, 3);
+      app.closeRemotePeer(10);
+      const _request = { type : MISSING_PATCH, peer : 10, minSeq : 2, maxSeq : 2, forPeer : 1 };
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), [_request], 'The oldest connected peer (lowest id) first');
+      assert.deepStrictEqual(popMissingPatchRequests(5), []);
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), []);
+      assert.deepStrictEqual(popMissingPatchRequests(5), [_request], 'Then the next one, if the first one does not have it');
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), [_request]);
+      assert.deepStrictEqual(popMissingPatchRequests(5), []);
+      // The missing patch is retransmitted
+      receivePatch(10, 2);
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), []);
+      assert.deepStrictEqual(popMissingPatchRequests(5), []);
+      // A new missing patch: the rotation restarts from the oldest peer
+      receivePatch(10, 5);
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), [{ type : MISSING_PATCH, peer : 10, minSeq : 4, maxSeq : 4, forPeer : 1 }]);
+      assert.deepStrictEqual(popMissingPatchRequests(5), []);
+    });
+
+    it('should remember a dead peer (lost peer), request its missing patches and share it in pings', function (done) {
+      addRemotePeer(3);
+      addRemotePeer(10);
+      receivePatch(10, 1);
+      receivePatch(10, 3);
+      app.closeRemotePeer(10);
+      setTimeout(() => {
+        assert.strictEqual(app.status().peerStats[10], undefined, 'The dead peer is cleaned after maxPeerDisconnectionToleranceMs');
+        const _lostPeer = app.status().lostPeers[10];
+        assert.strictEqual(_lostPeer[app.LAST_SEQUENCE_ID], 3);
+        assert.strictEqual(_lostPeer[app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 1);
+        app._detectAndRequestMissingPatches();
+        assert.deepStrictEqual(popMissingPatchRequests(3), [{ type : MISSING_PATCH, peer : 10, minSeq : 2, maxSeq : 2, forPeer : 1 }]);
+        // The lost peer is shared with the other peers, so that a new peer can request its patches
+        app._generatePingStatMessage(false);
+        const _ping = sockets[3].messages.find(msg => msg.type === PING);
+        assert.deepStrictEqual(_ping.delta[10], _lostPeer);
+        assert.ok(_ping.delta[3], 'The connected peers are still shared');
+        // The missing patch is retransmitted by peer 3
+        receivePatch(10, 2);
+        app._detectAndRequestMissingPatches();
+        assert.deepStrictEqual(popMissingPatchRequests(3), []);
+        assert.strictEqual(app.status().lostPeers[10][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 3);
+        done();
+      }, maxPeerDisconnectionToleranceMs * 3);
+    });
+
+    it('should learn the lost peers from the pings of the connected peers (new peer), and request their patches', function () {
+      addRemotePeer(3);
+      addRemotePeer(4);
+      const _at = hlc.from(_now);
+      receivePing(3, {
+        1  : [_at, 9, _at, 9, 0, 0], // me
+        4  : [_at, 9, _at, 9, 0, 0], // connected peer
+        10 : [_at + 5, 5, _at + 4, 4, 0, 0] // lost peer: peer 3 has its patches up to the sequence 4
+      });
+      assert.deepStrictEqual(Object.keys(app.status().lostPeers), ['10'], 'Only unknown peers are learned');
+      assert.strictEqual(app.status().lostPeers[10][app.LAST_SEQUENCE_ID], 4, 'What the remote peer really has');
+      assert.strictEqual(app.status().lostPeers[10][app.LAST_PATCH_AT_TIMESTAMP], _at + 4);
+      // Another peer announces less patches
+      receivePing(4, { 10 : [_at + 2, 2, _at + 2, 2, 0, 0] });
+      assert.strictEqual(app.status().lostPeers[10][app.LAST_SEQUENCE_ID], 4, 'The highest sequence is kept');
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), [{ type : MISSING_PATCH, peer : 10, minSeq : 1, maxSeq : 4, forPeer : 1 }]);
+      assert.deepStrictEqual(popMissingPatchRequests(4), []);
+      // Peer 3 retransmits the patches of the lost peer 10
+      for (let seq = 1; seq <= 4; seq++) {
+        receivePatch(10, seq);
+      }
+      app._detectAndRequestMissingPatches();
+      assert.deepStrictEqual(popMissingPatchRequests(3), []);
+      assert.deepStrictEqual(popMissingPatchRequests(4), []);
+      assert.strictEqual(app.status().lostPeers[10][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 4);
+      assert.strictEqual(db.prepare('SELECT count(*) AS nb FROM testA WHERE tenantId = 10').get().nb, 4);
+    });
+
+    it('should not crash nor learn lost peers from pings of older versions or with an unexpected delta', function () {
+      addRemotePeer(3);
+      const _at = hlc.from(_now);
+      const _deltas = [undefined, null, 'text', 42, [], {}, { 10 : null }, { 10 : 'text' }, { 10 : [] }, { 10 : [_at] }, { 10 : [_at, 5, null, 'text', 0, 0] }, { 10 : { 3 : 5 } }];
+      for (const _delta of _deltas) {
+        assert.doesNotThrow(() => receivePing(3, _delta), `delta ${JSON.stringify(_delta)}`);
+      }
+      // Ping of an older version (no lost peers): only the stats of the peers it knows
+      assert.doesNotThrow(() => receivePing(3, { 1 : [_at, 2, _at, 2, 0, 0], 3 : [_at, 4, _at, 4, 0, 0] }));
+      assert.deepStrictEqual(app.status().lostPeers, {});
+      assert.strictEqual(app.status().peerStats[3][5 /* MY_GUARANTEED_CONTIGUOUS_SEQUENCE_ID_STORED_IN_REMOTE_PEER */], 2);
+      // The database is not modified by pings
+      assert.strictEqual(db.prepare('SELECT count(*) AS nb FROM testA').get().nb, 0);
+      assert.strictEqual(db.prepare('SELECT count(*) AS nb FROM testA_patches').get().nb, 0);
+      assert.strictEqual(db.prepare('SELECT count(*) AS nb FROM pending_patches').get().nb, 0);
+    });
+
+    it('should forget a lost peer when its last patch is older than the retention, or when it reconnects', function () {
+      const _retentionMs = 1000 * 60 * 60 * 25; // default retention
+      addRemotePeer(3);
+      receivePing(3, {
+        10 : [hlc.from(_now), 1, hlc.from(_now), 1, 0, 0],
+        11 : [hlc.from(_now + 2000), 1, hlc.from(_now + 2000), 1, 0, 0],
+        12 : [hlc.from(_now + 3000), 1, hlc.from(_now + 3000), 1, 0, 0]
+      });
+      assert.deepStrictEqual(Object.keys(app.status().lostPeers), ['10', '11', '12']);
+      MockDate.set(_now + _retentionMs + 1000);
+      app._deleteOldPatches();
+      assert.deepStrictEqual(Object.keys(app.status().lostPeers), ['11', '12'], 'Patches of peer 10 are older than the retention');
+      receivePing(3, { 10 : [hlc.from(_now), 1, hlc.from(_now), 1, 0, 0] });
+      assert.deepStrictEqual(Object.keys(app.status().lostPeers), ['11', '12'], 'A peer older than the retention is not learned again');
+      addRemotePeer(11);
+      assert.deepStrictEqual(Object.keys(app.status().lostPeers), ['12'], 'Peer 11 is not lost anymore');
+    });
+
+    it('should retransmit the patches of a dead peer to a new peer (end-to-end)', function (done) {
+      addRemotePeer(10);
+      for (let seq = 1; seq <= 3; seq++) {
+        receivePatch(10, seq);
+      }
+      app.closeRemotePeer(10);
+      // A new peer 30 starts with an empty database, after the death of peer 10
+      const _dbB = connect();
+      const _appB = SQLiteOnSteroid(_dbB, 30);
+      _appB.migrate([{ up : _testSchema, down : ''}]);
+      const _socketToB = new EventEmitter(); // used by app to communicate with B
+      const _socketToA = new EventEmitter(); // used by B to communicate with app
+      _socketToB.send = (msg) => setImmediate(() => _socketToA.emit('message', msg));
+      _socketToA.send = (msg) => setImmediate(() => _socketToB.emit('message', msg));
+      setTimeout(() => {
+        assert.ok(app.status().lostPeers[10], 'Peer 10 is dead');
+        app.addRemotePeer(30, _socketToB);
+        _appB.addRemotePeer(1, _socketToA);
+        app._generatePingStatMessage(false);
+        setTimeout(() => {
+          assert.strictEqual(_appB.status().lostPeers[10][app.LAST_SEQUENCE_ID], 3, 'B learns peer 10 from the ping of app');
+          _appB._detectAndRequestMissingPatches();
+          setTimeout(() => {
+            assert.deepStrictEqual(_dbB.prepare('SELECT id, name FROM testA WHERE tenantId = 10 ORDER BY id').all(), [
+              { id : 1, name : '10-1' }, { id : 2, name : '10-2' }, { id : 3, name : '10-3' }
+            ]);
+            assert.strictEqual(_appB.status().lostPeers[10][app.GUARANTEED_CONTIGUOUS_SEQUENCE_ID], 3);
+            _appB.exit();
+            close(_dbB);
+            done();
+          }, 20);
+        }, 20);
+      }, maxPeerDisconnectionToleranceMs * 3);
+    });
+  });
+
   describe('_detectMissingSequenceIds', function () {
     let db, app, socket2;
     beforeEach (function () {

@@ -8,19 +8,23 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const EventEmitter = require('events');
 const Database = require('better-sqlite3');
 const SQLiteOnSteroid = require(process.env.REPLIC_SQLITE_LIB ?? '../lib/index.js');
 
 const NB_PATCHES = 10000;
 const NB_ROWS = 1000;
+const NB_LOST_PEERS = 100;
 const UNIX_TIMESTAMP_OFFSET = 1735689600000;
 // Patches per second measured on Apple M4 Max, Node 24, to compare with the current machine
 const REFERENCE_MACHINE = 'Apple M4 Max, Node 24';
 const REFERENCE_PATCHES_PER_SECOND = {
-  upsert              : 36000,
-  receive1PerLoop     : 31000,
-  receive100PerLoop   : 450000,
-  receiveAllInOneLoop : 750000
+  upsert                           : 36000,
+  receive1PerLoop                  : 31000,
+  receive100PerLoop                : 450000,
+  receiveAllInOneLoop              : 750000,
+  receiveAllInOneLoopWithLostPeers : 750000,
+  receivePingWithLostPeers         : 300000
 };
 
 const testSchema = `
@@ -47,7 +51,7 @@ const testSchema = `
 
 describe('performance', function () {
   const dbPath = path.join(os.tmpdir(), `replic-sqlite-perf-${process.pid}.sqlite`);
-  let db, app;
+  let db, app, socket2;
 
   beforeEach(function () {
     removeDatabase(dbPath);
@@ -55,7 +59,9 @@ describe('performance', function () {
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = normal');
     app = SQLiteOnSteroid(db, 1, { preBuiltExtensionPath : path.join(__dirname, '..', 'build', 'Release', 'keep_last') });
-    app.addRemotePeer(2, { send : () => {} });
+    socket2 = new EventEmitter();
+    socket2.send = () => {};
+    app.addRemotePeer(2, socket2);
     app.migrate([{ up : testSchema, down : '' }]);
   });
 
@@ -93,7 +99,37 @@ describe('performance', function () {
       checkRows(db);
     });
   }
+
+  it(`receive ${NB_PATCHES} patches, ${NB_PATCHES} per event loop, with ${NB_LOST_PEERS} lost peers`, async function () {
+    const _now = Date.now();
+    socket2.emit('message', generatePingWithLostPeers(_now));
+    const _start = process.hrtime.bigint();
+    for (let i = 1; i <= NB_PATCHES; i++) {
+      app._onPatchReceivedFromPeers(generatePatch(i, _now));
+    }
+    await new Promise(setImmediate);
+    report(this.test.title, _start, REFERENCE_PATCHES_PER_SECOND.receiveAllInOneLoopWithLostPeers);
+    checkRows(db);
+  });
+
+  it(`receive ${NB_PATCHES} pings announcing ${NB_LOST_PEERS} lost peers`, function () {
+    const _ping = generatePingWithLostPeers(Date.now());
+    const _start = process.hrtime.bigint();
+    for (let i = 1; i <= NB_PATCHES; i++) {
+      socket2.emit('message', _ping);
+    }
+    report(this.test.title, _start, REFERENCE_PATCHES_PER_SECOND.receivePingWithLostPeers, 'pings');
+  });
 });
+
+function generatePingWithLostPeers (now) {
+  const _at = (now - UNIX_TIMESTAMP_OFFSET) * (2 ** 13);
+  const _delta = { 1 : [_at, 0, _at, 0, 0, 0] };
+  for (let i = 0; i < NB_LOST_PEERS; i++) {
+    _delta[1000 + i] = [_at, 10, _at, 10, 0, 0];
+  }
+  return { type : 20, at : _at, peer : 2, seq : 0, ver : 1, delta : _delta };
+}
 
 function generatePatch (sequenceId, now) {
   return {
@@ -107,9 +143,9 @@ function generatePatch (sequenceId, now) {
   };
 }
 
-function report (title, start, referencePatchesPerSecond) {
+function report (title, start, referencePerSecond, unit = 'patches') {
   const _ms = Number(process.hrtime.bigint() - start) / 1e6;
-  console.log(`      ${title}: ${_ms.toFixed(0)} ms, ${Math.round(NB_PATCHES / _ms * 1000)} patches/s (reference: ${referencePatchesPerSecond} patches/s on ${REFERENCE_MACHINE})`);
+  console.log(`      ${title}: ${_ms.toFixed(0)} ms, ${Math.round(NB_PATCHES / _ms * 1000)} ${unit}/s (reference: ${referencePerSecond} ${unit}/s on ${REFERENCE_MACHINE})`);
 }
 
 function checkRows (db) {
