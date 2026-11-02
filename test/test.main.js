@@ -204,6 +204,26 @@ describe('main', function () {
       });
     });
 
+    it('should not throw if upsert fails without callback', function () {
+      const _db = connect();
+      const _app = SQLiteOnSteroid(_db, 1800);
+      const _consoleError = console.error;
+      const _errors = [];
+      console.error = (...args) => _errors.push(args.join(' '));
+      try {
+        assert.doesNotThrow(() => _app.upsert('testA', { id : 1, tenantId : 2 }), 'migrate() is not called yet');
+        _app.migrate([{ up : _testSchemaWithCheck, down : ''}]);
+        assert.doesNotThrow(() => _app.upsert('unknownTable', { id : 1 }));
+        assert.doesNotThrow(() => _app.upsert('testC', { id : 1, name : 'forbidden' }));
+      }
+      finally {
+        console.error = _consoleError;
+        close(_db);
+      }
+      assert.strictEqual(_errors.length, 3, 'Errors must be logged when there is no callback');
+      assert.ok(_errors[1].includes('Table unknownTable not found'));
+    });
+
     it('should not store the patch nor consume the sequence id if the patch cannot be applied (atomic upsert)', function (done) {
       const _db = connect();
       const _app = SQLiteOnSteroid(_db, 1800);
@@ -1679,6 +1699,47 @@ describe('main', function () {
       for (const invalidToken of invalidTokens) {
         assert.strictEqual(app._parseSessionToken(invalidToken), null);
       }
+    });
+  });
+
+  describe('heartbeat', function () {
+    const heartbeatIntervalMs = 5;
+    let db, app, messagesSentToPeer2;
+    beforeEach (function () {
+      db = connect();
+      messagesSentToPeer2 = [];
+      app = SQLiteOnSteroid(db, 1, { heartbeatIntervalMs });
+      app.addRemotePeer(2, { send : (msg) => messagesSentToPeer2.push(msg) });
+    });
+    afterEach (function () {
+      app.exit();
+      if (db.open) {
+        close(db);
+      }
+    });
+
+    it('should not start before migrate() and should start after', function (done) {
+      setTimeout(() => {
+        assert.deepStrictEqual(messagesSentToPeer2, [], 'The heartbeat must not run before migrate()');
+        app.migrate([{ up : _testSchema, down : ''}]);
+        setTimeout(() => {
+          assert.ok(messagesSentToPeer2.some(msg => msg.type === 20 /* PING */), 'The heartbeat must run after migrate()');
+          done();
+        }, heartbeatIntervalMs * 6);
+      }, heartbeatIntervalMs * 6);
+    });
+
+    it('should not crash the process if the heartbeat fails', function (done) {
+      app.migrate([{ up : _testSchema, down : ''}]);
+      const _consoleError = console.error;
+      const _errors = [];
+      console.error = (...args) => _errors.push(args.join(' '));
+      close(db); // all database requests fail now
+      setTimeout(() => {
+        console.error = _consoleError;
+        assert.ok(_errors.some(msg => msg.includes('Error in heartbeat')), 'The error must be logged');
+        done();
+      }, heartbeatIntervalMs * 6);
     });
   });
 

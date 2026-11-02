@@ -14,6 +14,9 @@
 - `readYourWrite` now waits until the patch is applied, not only stored.
 - Performance: patches received in the same event loop are saved and applied in a single transaction. Receiving patches is 5 times faster with 100 patches per event loop (~93,000 → ~450,000 patches/s) and up to 7 times faster during a synchronization burst (~98,000 → ~650,000 patches/s). `upsert` and isolated patches are unchanged (~36,000 and ~30,000 patches/s).
 - Add performance tests in `test/test.perf.js`, executed with the other tests (set `REPLIC_SQLITE_LIB` to compare with another version).
+- Fix: the heartbeat is started at the end of `migrate()` instead of the constructor, so it no longer crashes the process when it runs before `migrate()`.
+- Fix: errors in the heartbeat are caught and logged instead of crashing the process.
+- Fix: `upsert` without callback no longer throws `callback is not a function` on error paths; the error is logged instead.
 
 ## v0.4.1
 
