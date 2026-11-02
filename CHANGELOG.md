@@ -17,6 +17,9 @@
 - Fix: the heartbeat is started at the end of `migrate()` instead of the constructor, so it no longer crashes the process when it runs before `migrate()`.
 - Fix: errors in the heartbeat are caught and logged instead of crashing the process.
 - Fix: `upsert` without callback no longer throws `callback is not a function` on error paths; the error is logged instead.
+- Fix: `exit()` waits the replication only for connected peers. Disconnected peers kept during `maxPeerDisconnectionToleranceMs` caused a timeout during rolling updates.
+- Fix: the leader waits the replication before the shutdown backup. The backup is still done after a replication timeout, and the error is returned.
+- Fix: the heartbeat keeps running while `exit()` waits the replication, so peers can still detect and request my last patches.
 
 ## v0.4.1
 
