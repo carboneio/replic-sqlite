@@ -20,6 +20,8 @@
 - Fix: `exit()` waits the replication only for connected peers. Disconnected peers kept during `maxPeerDisconnectionToleranceMs` caused a timeout during rolling updates.
 - Fix: the leader waits the replication before the shutdown backup. The backup is still done after a replication timeout, and the error is returned.
 - Fix: the heartbeat keeps running while `exit()` waits the replication, so peers can still detect and request my last patches.
+- Fix: received patches older than the retention period (`maxPatchRetentionMs`) are ignored. They could overwrite a more recent value whose patches were already deleted. They are still considered as received, so they are not requested again.
+
 
 ## v0.4.1
 
